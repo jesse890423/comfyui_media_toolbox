@@ -1,0 +1,9 @@
+# ComfyUI 音视频工具箱 —— 依赖
+#
+# 注意：av / numpy / torch 由 ComfyUI 核心自带，无需在此声明。
+# 这里只列出本插件额外需要的依赖。
+
+# ffmpeg 的 Python 封装，会自带一份 ffmpeg 二进制。
+# 节点按 FFMPEG_BINARY → IMAGEIO_FFMPEG_EXE → imageio-ffmpeg → PATH 的顺序查找。
+# 若环境中已有 ffmpeg 并加入了 PATH，本行可以删除。
+imageio-ffmpeg>=0.4.9

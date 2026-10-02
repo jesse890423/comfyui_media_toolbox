@@ -1,0 +1,416 @@
+{
+  "id": "b1c2d3e4-1000-4000-8000-000000000001",
+  "revision": 0,
+  "last_node_id": 3,
+  "last_link_id": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "MarkdownNote",
+      "pos": [
+        -360,
+        60
+      ],
+      "size": [
+        430,
+        900
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#432",
+      "bgcolor": "#653",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "# 音频格式转换示例\n\n两个节点直连即可完成格式转换，运行一次工作流就能把音频转成需要的格式。\n\n## 节点说明\n\n**加载音频(增强)**\n\n- `文件路径`：填本地任意绝对路径，优先级最高，不会复制任何副本\n- `音频文件`：从 ComfyUI 的 `input` 目录选择，与官方 Load Audio 用法一致\n- `音轨序号`：文件含多条音轨时使用哪一条，0 表示第一条\n- 直接支持视频文件（mp4 / mkv / mov / avi / webm / flv / ts…），会自动提取其中的音频\n\n**保存音频(平台发布)**\n\n- 勾选需要的目标格式，可一次产出多个（如 WAV + MP3 + FLAC）\n- 参数为「自动（跟随源）」时自动适配源音频的采样率、声道、位深、码率\n- 目标格式与源格式一致且参数全为「自动」时，直接复制源文件，0 秒完成\n\n## 用法\n\n1. 填好 `文件路径`，或直接选 `input` 目录里的文件\n2. 在右侧勾选目标格式，保持参数为「自动（跟随源）」\n3. 点运行。文件按 `文件名前缀` 保存到 `output` 目录\n4. 报告里会列出每个格式的实际参数与平台合规校验结果\n\n## 常见需求对应设置\n\n| 需求 | 设置 |\n|---|---|\n| 只要一个 MP3 | 勾选 `导出MP3`，其余不勾 |\n| MP3 + WAV 母版 | 勾选 `导出MP3` 和 `导出WAV` |\n| 平台发布合规检查 | `平台预设` 选对应平台 |\n| 手动指定采样率/位深 | `采样率`、`WAV位深` 选具体值 |\n| 去掉平台校验 | `平台预设` 选「不校验」 |\n\n## 相关节点\n\n- 视频文件要转成音频时，也可以用「加载视频(增强)」配合「保存音频(平台发布)」\n- 长音频只取一部分时，在加载节点里设置 `截断方式`\n"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "LoadAudioAdvanced",
+      "pos": [
+        130,
+        60
+      ],
+      "size": [
+        430,
+        300
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "文件路径",
+          "name": "文件路径",
+          "type": "STRING",
+          "widget": {
+            "name": "文件路径"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "音频文件",
+          "name": "音频文件",
+          "type": "COMBO",
+          "widget": {
+            "name": "音频文件"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "音轨序号",
+          "name": "音轨序号",
+          "type": "INT",
+          "widget": {
+            "name": "音轨序号"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "截断方式",
+          "name": "截断方式",
+          "type": "COMBO",
+          "widget": {
+            "name": "截断方式"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "起点(秒)",
+          "name": "起点(秒)",
+          "type": "FLOAT",
+          "widget": {
+            "name": "起点(秒)"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "终点(秒)",
+          "name": "终点(秒)",
+          "type": "FLOAT",
+          "widget": {
+            "name": "终点(秒)"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "截取时长(秒)",
+          "name": "截取时长(秒)",
+          "type": "FLOAT",
+          "widget": {
+            "name": "截取时长(秒)"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "音频",
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            1
+          ]
+        },
+        {
+          "localized_name": "信息",
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadAudioAdvanced"
+      },
+      "widgets_values": [
+        "",
+        "自己录音.wav",
+        0,
+        "不截断（使用完整音频）",
+        0.0,
+        0.0,
+        60.0
+      ],
+      "widgets_values_named": {
+        "文件路径": "",
+        "音频文件": "自己录音.wav",
+        "音轨序号": 0,
+        "截断方式": "不截断（使用完整音频）",
+        "起点(秒)": 0.0,
+        "终点(秒)": 0.0,
+        "截取时长(秒)": 60.0
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 3,
+      "type": "SaveAudioPlatformExport",
+      "pos": [
+        640,
+        40
+      ],
+      "size": [
+        340,
+        560
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "音频",
+          "name": "音频",
+          "type": "AUDIO",
+          "link": 1
+        },
+        {
+          "localized_name": "文件名前缀",
+          "name": "文件名前缀",
+          "type": "STRING",
+          "widget": {
+            "name": "文件名前缀"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "导出WAV",
+          "name": "导出WAV",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "导出WAV"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "WAV位深",
+          "name": "WAV位深",
+          "type": "COMBO",
+          "widget": {
+            "name": "WAV位深"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "导出MP3",
+          "name": "导出MP3",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "导出MP3"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "MP3码率",
+          "name": "MP3码率",
+          "type": "COMBO",
+          "widget": {
+            "name": "MP3码率"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "导出OPUS",
+          "name": "导出OPUS",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "导出OPUS"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "OPUS码率",
+          "name": "OPUS码率",
+          "type": "COMBO",
+          "widget": {
+            "name": "OPUS码率"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "保留FLAC",
+          "name": "保留FLAC",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "保留FLAC"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "采样率",
+          "name": "采样率",
+          "type": "COMBO",
+          "widget": {
+            "name": "采样率"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "声道",
+          "name": "声道",
+          "type": "COMBO",
+          "widget": {
+            "name": "声道"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "平台预设",
+          "name": "平台预设",
+          "type": "COMBO",
+          "widget": {
+            "name": "平台预设"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "平台名称",
+          "name": "平台名称",
+          "type": "STRING",
+          "widget": {
+            "name": "平台名称"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "合格格式",
+          "name": "合格格式",
+          "type": "STRING",
+          "widget": {
+            "name": "合格格式"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "最低采样率",
+          "name": "最低采样率",
+          "type": "INT",
+          "widget": {
+            "name": "最低采样率"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "最低位深",
+          "name": "最低位深",
+          "type": "INT",
+          "widget": {
+            "name": "最低位深"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "最低码率kbps",
+          "name": "最低码率kbps",
+          "type": "INT",
+          "widget": {
+            "name": "最低码率kbps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "要求声道",
+          "name": "要求声道",
+          "type": "COMBO",
+          "widget": {
+            "name": "要求声道"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "文件大小上限MB",
+          "name": "文件大小上限MB",
+          "type": "INT",
+          "widget": {
+            "name": "文件大小上限MB"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "报告",
+          "name": "报告",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "localized_name": "音频",
+          "name": "音频",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveAudioPlatformExport"
+      },
+      "widgets_values": [
+        "audio/格式转换",
+        true,
+        "自动（跟随源）",
+        true,
+        "自动（跟随源）",
+        false,
+        "自动（跟随源）",
+        false,
+        "自动（跟随源）",
+        "自动（跟随源）",
+        "不校验",
+        "不校验",
+        "wav,mp3",
+        44100,
+        16,
+        320,
+        "双声道",
+        200
+      ],
+      "widgets_values_named": {
+        "文件名前缀": "audio/格式转换",
+        "导出WAV": true,
+        "WAV位深": "自动（跟随源）",
+        "导出MP3": true,
+        "MP3码率": "自动（跟随源）",
+        "导出OPUS": false,
+        "OPUS码率": "自动（跟随源）",
+        "保留FLAC": false,
+        "采样率": "自动（跟随源）",
+        "声道": "自动（跟随源）",
+        "平台预设": "不校验",
+        "平台名称": "不校验",
+        "合格格式": "wav,mp3",
+        "最低采样率": 44100,
+        "最低位深": 16,
+        "最低码率kbps": 320,
+        "要求声道": "双声道",
+        "文件大小上限MB": 200
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      3,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.85,
+      "offset": [
+        40,
+        40
+      ]
+    }
+  },
+  "version": 0.4
+}

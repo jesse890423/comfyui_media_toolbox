@@ -1,0 +1,248 @@
+{
+  "nodeCategories": {
+    "音频": "Audio",
+    "视频": "Video"
+  },
+  "nodeDefs": {
+    "LoadAudioAdvanced": {
+      "display_name": "Load Audio (Advanced)",
+      "category": "Audio",
+      "description": "Load an audio file and output AUDIO.\n• File path: any local absolute path (highest priority, no copy is made)\n• Audio file: pick from ComfyUI's `input` directory (same as official Load Audio)\n• Video files (mp4 / mkv / mov / avi / webm / flv / ts…) are accepted and the audio is extracted automatically\n• Truncation: take a segment from the start, any middle range, or from a point to the end",
+      "inputs": {
+        "文件路径": "File path",
+        "音频文件": "Audio file",
+        "音轨序号": "Audio track index",
+        "截断方式": "Truncation mode",
+        "起点(秒)": "Start (seconds)",
+        "终点(秒)": "End (seconds)",
+        "截取时长(秒)": "Duration to take (seconds)"
+      },
+      "inputTips": {
+        "文件路径": "Any local absolute path. Audio and video are both supported. When filled, it takes priority and no copy of the file is created.",
+        "音频文件": "Select a file from the ComfyUI `input` directory (used when File path is empty).",
+        "音轨序号": "Which audio track to use for files with multiple tracks (e.g. videos). 0 means the first track.",
+        "截断方式": "How to cut a long audio file:\n① Head segment: from 0 s, take Duration to take seconds\n② Middle range: from Start to End\n③ From start to end: use everything from Start to the end of the file\nFor ① fill in Duration to take; for ② fill in Start and End; for ③ fill in Start only.",
+        "起点(秒)": "Where to start (seconds).\nMiddle range: used together with End.\nFrom start to end: the starting position; End is ignored.",
+        "终点(秒)": "Where to stop (seconds). Must be greater than Start.\nOnly applies to the Middle range mode; ignored in other modes.",
+        "截取时长(秒)": "How much to take (seconds), measured from the beginning of the file, so the start is fixed at 0 s.\nOnly applies to the Head segment mode; ignored in other modes."
+      },
+      "outputs": {
+        "音频": "Audio",
+        "信息": "Info"
+      },
+      "outputNames": {
+        "音频": "AUDIO",
+        "信息": "info"
+      }
+    },
+    "SaveAudioPlatformExport": {
+      "display_name": "Save Audio (Platform Export)",
+      "category": "Audio",
+      "description": "Export AUDIO to WAV / MP3 / FLAC / OPUS in one run, with a platform compliance report.\n• Sample rate / channels / WAV bit depth / MP3 bitrate / OPUS bitrate set to \"Auto\" follow the source audio parameters\n• Directly connected to \"Load Audio (Advanced)\" for format conversion: when the target format matches the source and all parameters are \"Auto\", the source file is copied as-is (instant, no re-encoding)\n• Multiple target formats can be produced in a single run",
+      "inputs": {
+        "音频": "Audio",
+        "文件名前缀": "Filename prefix",
+        "导出WAV": "Export WAV",
+        "WAV位深": "WAV bit depth",
+        "导出MP3": "Export MP3",
+        "MP3码率": "MP3 bitrate",
+        "导出OPUS": "Export OPUS",
+        "OPUS码率": "OPUS bitrate",
+        "保留FLAC": "Keep FLAC",
+        "采样率": "Sample rate",
+        "声道": "Channels",
+        "平台预设": "Platform preset",
+        "平台名称": "Platform name",
+        "合格格式": "Accepted formats",
+        "最低采样率": "Minimum sample rate",
+        "最低位深": "Minimum bit depth",
+        "最低码率kbps": "Minimum bitrate (kbps)",
+        "要求声道": "Required channels",
+        "文件大小上限MB": "Max file size (MB)"
+      },
+      "inputTips": {
+        "音频": "The AUDIO input of any audio output node.",
+        "文件名前缀": "A relative path saves into the ComfyUI output directory; an absolute path saves to any local directory.",
+        "WAV位深": "WAV sample bit depth. \"Auto\" follows the source bit depth (16-bit if unknown).",
+        "MP3码率": "MP3 bitrate. \"Auto\" uses 320 kbps for lossless sources and never exceeds a lossy source's bitrate; \"V0\" is variable-bitrate highest quality.",
+        "OPUS码率": "OPUS bitrate. \"Auto\" uses 192 kbps for lossless sources and never exceeds a lossy source's bitrate.",
+        "采样率": "Sample rate. \"Auto\" follows the source sample rate.",
+        "声道": "Channel count. \"Auto\" follows the source channel count.",
+        "最低采样率": "Minimum sample rate required by the platform (Hz).",
+        "最低位深": "Minimum bit depth required by the platform (bit); applies to WAV only.",
+        "最低码率kbps": "Minimum bitrate required by the platform (kbps); applies to MP3 / OPUS only.",
+        "要求声道": "Channel count required by the platform.",
+        "文件大小上限MB": "Maximum size of a single audio file (MB). Anything larger is treated as non-compliant."
+      },
+      "outputs": {
+        "报告": "Report",
+        "音频": "Audio"
+      },
+      "outputNames": {
+        "报告": "report",
+        "音频": "AUDIO"
+      }
+    },
+    "LoadVideoAdvanced": {
+      "display_name": "Load Video (Advanced)",
+      "category": "Video",
+      "description": "Load a video file and output VIDEO.\n• File path: any local absolute path (highest priority, no copy is made)\n• Video file: pick from ComfyUI's `input` directory (same as official Load Video)\n• Supports mp4 / mkv / mov / avi / webm / flv / ts and other mainstream formats\n• Truncation: take a segment from the start, any middle range, or from a point to the end",
+      "inputs": {
+        "文件路径": "File path",
+        "视频文件": "Video file",
+        "视频流序号": "Video stream index",
+        "截断方式": "Truncation mode",
+        "起点(秒)": "Start (seconds)",
+        "终点(秒)": "End (seconds)",
+        "截取时长(秒)": "Duration to take (seconds)"
+      },
+      "inputTips": {
+        "文件路径": "Any local absolute path. When filled, it takes priority and no copy of the file is created.",
+        "视频文件": "Select a video from the ComfyUI `input` directory (used when File path is empty).",
+        "视频流序号": "Which video stream to use for files with multiple streams. 0 means the first one.",
+        "截断方式": "How to cut a long video:\n① Head segment: from 0 s, take Duration to take seconds\n② Middle range: from Start to End\n③ From start to end: use everything from Start to the end of the video\nFor ① fill in Duration to take; for ② fill in Start and End; for ③ fill in Start only.",
+        "起点(秒)": "Where to start (seconds).\nMiddle range: used together with End.\nFrom start to end: the starting position; End is ignored.",
+        "终点(秒)": "Where to stop (seconds). Must be greater than Start.\nOnly applies to the Middle range mode; ignored in other modes.",
+        "截取时长(秒)": "How much to take (seconds), measured from the beginning of the video, so the start is fixed at 0 s.\nOnly applies to the Head segment mode; ignored in other modes."
+      },
+      "outputs": {
+        "视频": "Video",
+        "信息": "Info"
+      },
+      "outputNames": {
+        "视频": "VIDEO",
+        "信息": "info"
+      }
+    },
+    "SaveVideoConverter": {
+      "display_name": "Save Video (Format Converter)",
+      "category": "Video",
+      "description": "Export VIDEO to MP4 / MKV / WEBM / AVI / MOV in one run.\n• Resolution / frame rate / video codec / audio handling set to \"Auto\" follow the source video\n• Directly connected to \"Load Video (Advanced)\" for format conversion: when the target format matches the source and all parameters are \"Auto\", the source file is copied as-is (instant, no re-encoding)\n• Multiple target formats can be produced in a single run; no report is produced, files are simply written to disk",
+      "inputs": {
+        "视频": "Video",
+        "文件名前缀": "Filename prefix",
+        "导出MP4": "Export MP4",
+        "导出MKV": "Export MKV",
+        "导出WEBM": "Export WEBM",
+        "导出AVI": "Export AVI",
+        "导出MOV": "Export MOV",
+        "视频编码": "Video codec",
+        "画质CRF": "Quality CRF",
+        "分辨率": "Resolution",
+        "帧率": "Frame rate",
+        "音频处理": "Audio handling",
+        "音频码率": "Audio bitrate"
+      },
+      "inputTips": {
+        "视频": "The VIDEO input of any video output node.",
+        "文件名前缀": "A relative path saves into the ComfyUI output directory; an absolute path saves to any local directory.",
+        "视频编码": "\"Auto\" reuses the source codec; if that codec is incompatible with the target container it falls back to the container's recommended codec.",
+        "画质CRF": "Constant rate factor. Lower values mean higher quality and larger files; \"Auto\" picks a sensible default per codec.",
+        "分辨率": "\"Keep original\" uses the source resolution; any other option scales to the listed size proportionally (no distortion, no cropping).",
+        "帧率": "\"Keep original\" uses the source frame rate; any other option outputs the given value.",
+        "音频处理": "\"Keep original audio\" does not re-encode; \"Auto\" transcodes when the target container cannot carry the source audio; \"Remove audio\" exports a silent video; any other option forces transcoding to that format.",
+        "音频码率": "Bitrate used when the audio is re-encoded. \"Auto\" picks a common value for the chosen audio codec."
+      },
+      "outputs": {
+        "视频": "Video"
+      },
+      "outputNames": {
+        "视频": "VIDEO"
+      }
+    }
+  },
+  "nodeInputOptions": {
+    "截断方式": {
+      "不截断（使用完整音频）": "No truncation (use the whole file)",
+      "只取开头一段（0 秒 → 截取时长）": "Head segment only (0 s → duration)",
+      "只取中间一段（起点 → 终点）": "Middle range only (start → end)",
+      "从起点一直到结尾（起点 → 末尾）": "From start to the end (start → end of file)"
+    },
+    "WAV位深": {
+      "自动（跟随源）": "Auto (follow source)",
+      "16 位": "16-bit",
+      "24 位": "24-bit",
+      "32 位": "32-bit"
+    },
+    "MP3码率": {
+      "自动（跟随源）": "Auto (follow source)",
+      "V0（最高质量）": "V0 (highest quality)",
+      "128 kbps": "128 kbps",
+      "192 kbps": "192 kbps",
+      "256 kbps": "256 kbps",
+      "320 kbps": "320 kbps"
+    },
+    "OPUS码率": {
+      "自动（跟随源）": "Auto (follow source)",
+      "64 kbps": "64 kbps",
+      "96 kbps": "96 kbps",
+      "128 kbps": "128 kbps",
+      "192 kbps": "192 kbps",
+      "320 kbps": "320 kbps"
+    },
+    "采样率": {
+      "自动（跟随源）": "Auto (follow source)",
+      "44.1 kHz": "44.1 kHz",
+      "48 kHz": "48 kHz",
+      "96 kHz": "96 kHz"
+    },
+    "声道": {
+      "自动（跟随源）": "Auto (follow source)",
+      "双声道": "Stereo",
+      "单声道": "Mono"
+    },
+    "要求声道": {
+      "双声道": "Stereo",
+      "单声道": "Mono",
+      "不限": "Any"
+    },
+    "视频编码": {
+      "自动（跟随源）": "Auto (follow source)",
+      "H.264 (libx264)": "H.264 (libx264)",
+      "H.265 (libx265)": "H.265 (libx265)",
+      "VP9 (libvpx-vp9)": "VP9 (libvpx-vp9)",
+      "AV1 (libaom-av1)": "AV1 (libaom-av1)",
+      "VP8 (libvpx)": "VP8 (libvpx)",
+      "MPEG-4 (mpeg4)": "MPEG-4 (mpeg4)"
+    },
+    "画质CRF": {
+      "自动（跟随源）": "Auto (follow source)",
+      "16（极高）": "16 (very high)",
+      "20（高）": "20 (high)",
+      "23（标准）": "23 (standard)",
+      "26（较小）": "26 (smaller)"
+    },
+    "分辨率": {
+      "保持原始": "Keep original",
+      "1920×1080": "1920×1080",
+      "1280×720": "1280×720",
+      "854×480": "854×480",
+      "640×360": "640×360"
+    },
+    "帧率": {
+      "保持原始": "Keep original",
+      "60": "60",
+      "30": "30",
+      "25": "25",
+      "24": "24",
+      "15": "15"
+    },
+    "音频处理": {
+      "保留原音频（不重新编码）": "Keep original audio (no re-encoding)",
+      "自动（跟随源）": "Auto (follow source)",
+      "移除音频（导出无声视频）": "Remove audio (export silent video)",
+      "AAC (m4a)": "AAC (m4a)",
+      "MP3": "MP3",
+      "OPUS": "OPUS",
+      "FLAC": "FLAC",
+      "WAV (pcm_s16le)": "WAV (pcm_s16le)"
+    },
+    "音频码率": {
+      "自动（跟随源）": "Auto (follow source)",
+      "128 kbps": "128 kbps",
+      "192 kbps": "192 kbps",
+      "256 kbps": "256 kbps",
+      "320 kbps": "320 kbps"
+    }
+  }
+}

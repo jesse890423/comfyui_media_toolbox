@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 测试与产出
+temp/
+output/
+*.bak-*
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
