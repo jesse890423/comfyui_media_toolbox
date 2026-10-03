@@ -81,6 +81,12 @@ cd custom_nodes
 git clone https://github.com/jesse890423/comfyui_media_toolbox.git
 ```
 
+**国内网络较慢时，用 GitCode 镜像地址（每日自动同步，无需翻墙）：**
+
+```bash
+git clone https://gitcode.com/jesse0423/comfyui_media_toolbox.git
+```
+
 然后重启 ComfyUI。
 
 #### 方式 C：下载压缩包手动放置

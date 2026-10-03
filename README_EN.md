@@ -89,6 +89,12 @@ cd custom_nodes
 git clone https://github.com/jesse890423/comfyui_media_toolbox.git
 ```
 
+**In mainland China, GitHub can be slow — use the GitCode mirror instead (auto-synced daily, no VPN needed):**
+
+```bash
+git clone https://gitcode.com/jesse0423/comfyui_media_toolbox.git
+```
+
 Then restart ComfyUI.
 
 #### Method C — download ZIP and place manually
