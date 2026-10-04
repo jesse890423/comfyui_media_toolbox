@@ -1,0 +1,86 @@
+{
+  "nodeCategories": {
+    "Audio": "音频",
+    "Video": "视频"
+  },
+  "nodeInputOptions": {
+    "音频文件": {
+      "(no audio or video files in the input directory)": "(input 目录暂无音频/视频文件)"
+    },
+    "视频文件": {
+      "(no video files in the input directory)": "(input 目录暂无视频文件)"
+    },
+    "截断方式": {
+      "No truncation (use the whole file)": "不截断（使用完整文件）",
+      "Head segment only (0 s -> duration)": "只取开头一段（0 秒 → 截取时长）",
+      "Middle range only (start -> end)": "只取中间一段（起点 → 终点）",
+      "From start to the end (start -> end of file)": "从起点一直到结尾（起点 → 末尾）"
+    },
+    "WAV位深": {
+      "Auto (follow source)": "自动（跟随源）",
+      "16-bit": "16 位",
+      "24-bit": "24 位",
+      "32-bit": "32 位"
+    },
+    "MP3码率": {
+      "Auto (follow source)": "自动（跟随源）",
+      "V0 (highest quality)": "V0（最高质量）"
+    },
+    "OPUS码率": {
+      "Auto (follow source)": "自动（跟随源）"
+    },
+    "采样率": {
+      "Auto (follow source)": "自动（跟随源）"
+    },
+    "声道": {
+      "Auto (follow source)": "自动（跟随源）",
+      "Stereo": "双声道",
+      "Mono": "单声道"
+    },
+    "要求声道": {
+      "Stereo": "双声道",
+      "Mono": "单声道",
+      "Any": "不限"
+    },
+    "平台预设": {
+      "Soda Music": "汽水音乐",
+      "QQ Music": "QQ音乐",
+      "NetEase Cloud Music": "网易云音乐",
+      "Kugou Music": "酷狗音乐",
+      "Douyin": "抖音",
+      "Kuaishou": "快手",
+      "Bilibili": "哔哩哔哩",
+      "Custom": "自定义",
+      "No validation": "不校验"
+    },
+    "视频编码": {
+      "Auto (follow source)": "自动（跟随源）"
+    },
+    "画质CRF": {
+      "Auto (follow source)": "自动（跟随源）",
+      "16 (very high)": "16（极高）",
+      "20 (high)": "20（高）",
+      "23 (standard)": "23（标准）",
+      "26 (smaller)": "26（较小）"
+    },
+    "分辨率": {
+      "Keep original": "保持原始"
+    },
+    "帧率": {
+      "Keep original": "保持原始"
+    },
+    "音频处理": {
+      "Keep original audio (no re-encoding)": "保留原音频（不重新编码）",
+      "Auto (follow source)": "自动（跟随源）",
+      "Remove audio (export silent video)": "移除音频（导出无声视频）"
+    },
+    "音频码率": {
+      "Auto (follow source)": "自动（跟随源）"
+    },
+    "报告语言": {
+      "Follow UI language": "跟随界面语言",
+      "English": "英文",
+      "中文": "中文"
+    }
+  }
+}

@@ -3,12 +3,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![中文](https://img.shields.io/badge/README-中文-lightgrey.svg)](README.md)
 
-A pair of **audio / video loading and format conversion** custom nodes for ComfyUI.
-The interface is fully localised in Chinese out of the box.
+**Audio / video loading and format conversion** custom nodes for ComfyUI.
 
-Key features: load any local file by absolute path (**no copies created**), export
-multiple formats in a single run, parameters that adapt to the source automatically,
-and instant passthrough when the target format matches the source.
+Key features: export multiple formats in a single run, parameters that adapt to the
+source automatically, instant passthrough when the target format matches the source,
+and built-in compliance checks for mainstream Chinese music platforms.
 
 > **English documentation · [中文文档](README.md)**
 
@@ -16,13 +15,13 @@ and instant passthrough when the target format matches the source.
 
 ## Interface language
 
-The node interface is **Chinese by default** — no configuration needed.
+The interface is **English by default**. A Simplified Chinese translation ships in
+`locales/zh/`, covering every node name, parameter, dropdown option and tooltip.
+Switch it in ComfyUI under **Interface → Language**.
 
-If your ComfyUI runs in English, the plugin follows the system language automatically
-(an English language pack ships in `locales/en/`, covering every node name, parameter,
-dropdown option and tooltip).
-
-Just switch the language in ComfyUI under **Interface → Language**.
+The language of the report text is controlled per node by `报告语言`
+(Report language), which defaults to following the interface. It can also be
+forced to English or Chinese regardless of the interface language.
 
 ---
 
@@ -30,10 +29,11 @@ Just switch the language in ComfyUI under **Interface → Language**.
 
 | Node | Purpose |
 |---|---|
-| **加载音频(增强)** / Load Audio (Advanced) | Load local audio, or the audio track of a video; supports absolute paths and long-audio truncation |
-| **保存音频(平台发布)** / Save Audio (Platform Export) | Produce WAV / MP3 / FLAC / OPUS in one run, with platform compliance checks |
-| **加载视频(增强)** / Load Video (Advanced) | Load local video; supports absolute paths and long-video truncation |
-| **保存视频(格式转换)** / Save Video (Format Converter) | Produce MP4 / MKV / WEBM / AVI / MOV in one run; no report |
+| **Load Audio (Advanced)** | Load audio from the `input` directory, or the audio track of a video; supports long-audio truncation |
+| **Save Audio (Platform Export)** | Produce WAV / MP3 / FLAC / OPUS in one run, with platform compliance checks |
+| **Load Video (Advanced)** | Load video from the `input` directory; supports long-video truncation |
+| **Save Video (Format Converter)** | Produce MP4 / MKV / WEBM / AVI / MOV in one run |
+| **Video Report** | Inspect a video's parameters without exporting anything |
 
 Audio and video follow exactly the same logic: the load node reads the file (optionally
 trimmed), the save node writes it out in the target formats. Connect them directly to
@@ -41,30 +41,41 @@ convert formats.
 
 ---
 
+## Where files come from
+
+The plugin reads and writes **only** inside ComfyUI's `input` and `output`
+directories, and never touches anything else. This is deliberate: the nodes do not
+accept arbitrary local paths, so they cannot be used to read arbitrary files on the
+host.
+
+To bring in a file from your machine, either:
+
+- **Drag and drop** it onto the ComfyUI canvas; ComfyUI copies it into `input`
+- **The upload button** on the load node stores it in `input` and fills in the name
+  for you; the file can be auditioned / previewed without running the node
+
+The load nodes also carry a **Refresh** button, because ComfyUI scans the directory
+only at startup — files added while it is running show up after a refresh.
+
+The dropdown lists subdirectories recursively, so `subfolder/name` works directly.
+
+---
+
 ## Where files are saved
 
-The `文件名前缀` (Filename prefix) input of both save nodes accepts two forms:
-
-| Form | Destination |
-|---|---|
-| Relative, e.g. `video/output` | Inside the ComfyUI `output` directory (standard behaviour) |
-| **Absolute path**, e.g. `D:\MyVideos\clip` | Any local directory; it is created automatically |
-
-Absolute paths may include the extension or not:
-
-- `D:\MyVideos\clip.mp4` → `D:\MyVideos\clip_00001.mp4`
-- `D:\MyVideos\clip` → `D:\MyVideos\clip_00001.mp4`
+`文件名前缀` (Filename prefix) is a **relative** path inside the `output`
+directory, e.g. `video/output` writes to `output/video/output_00001.mp4`.
 
 The trailing `_00001` is an incrementing counter that prevents overwriting existing
 files. When the video node produces several formats at once, they all share the same
-number so they stay grouped.
+number so they stay grouped. Absolute paths and `..` are rejected.
 
 ---
 
 ## Installation
 
 Two steps: **① drop the plugin into ComfyUI** → **② make sure ffmpeg is available**.
-Restart ComfyUI afterwards and the nodes appear under the 音频 / Video categories.
+Restart ComfyUI afterwards and the nodes appear under the Audio / Video categories.
 
 ### Step ①: install the plugin (pick one)
 
@@ -135,7 +146,7 @@ ComfyUI/
 ### Verify the install
 
 After restarting ComfyUI, right-click an empty canvas → **Add Node**. Under the
-**音频** or **Video** categories you should see all four nodes. If you do, the
+**Audio** or **Video** categories you should see all five nodes. If you do, the
 installation succeeded.
 
 ### Step ②: Dependencies
@@ -215,34 +226,33 @@ The first line `ffmpeg = ...` is the answer; `ffmpeg = None` means it wasn't fou
 
 **Nodes don't show up after install?** Confirm there is no double-nested folder and
 that `__init__.py` is at the first level of `comfyui_media_toolbox`. Otherwise check the
-ComfyUI console for `[音视频转换]` errors.
+ComfyUI console for `[Media Toolbox]` errors.
 
-**"未找到 ffmpeg" (ffmpeg not found) error?** Install it per Step ②, into ComfyUI's own
+**"ffmpeg not found" error?** Install it per Step ②, into ComfyUI's own
 Python environment (the portable build uses `python_embeded`).
 
 **Loads fine but transcoding fails / output won't play?** Usually a stripped ffmpeg.
 Switch to a full build or `pip install imageio-ffmpeg`.
 
-**"📁 选择本地文件" button does nothing (Linux / macOS)?** That button uses the native
-Windows dialog and is Windows-only. On other systems just type an absolute path into
-`文件路径`; it works identically.
+**A file you just added to `input` is missing from the dropdown?** Click the load
+node's **Refresh** button. ComfyUI scans the directory only at startup, so files
+added while it is running need a refresh.
+
+**How do I switch the interface language?** ComfyUI's **Interface → Language**.
+Both the node labels and the report text follow it; the report language can also be
+pinned per node.
 
 ---
 
 ## Core features
 
-### 1. Absolute paths, no copies
+### 1. Confined to the input and output directories
 
-ComfyUI's upload flow copies files into the `input` directory. These load nodes accept
-any **local absolute path** and read the original file directly — nothing extra is
-written to disk.
+Every file operation is restricted to ComfyUI's `input` and `output` directories.
+Each path is normalised with `realpath` and then checked with `commonpath`, so
+absolute paths, `..` traversal and symlinks pointing outside are all rejected.
 
-Two convenience buttons are added to the node:
-
-- **📁 选择本地文件（不复制副本）** — opens the native system file picker
-- **🔄 刷新 input 列表** — refreshes the dropdown (also picks up files added after startup)
-
-Both work for audio and video.
+Use the canvas drop or the node's upload button to bring in your own files.
 
 ### 2. Video files work as audio input
 
@@ -280,10 +290,10 @@ which is faster than converting one by one.
 
 ### 7. Platform compliance (audio)
 
-The audio save node includes presets for major Chinese platforms (QQ Music, NetEase
-Cloud Music, Kugou, Douyin, Kuaishou, Bilibili, …), checking format, sample rate, bit
+The audio save node includes presets for major Chinese platforms (Soda Music, QQ Music,
+NetEase Cloud Music, Kugou, Douyin, Kuaishou, Bilibili), checking format, sample rate, bit
 depth, bitrate, channels and file size. Choose "Custom" to set your own rules, or
-"No check" to only export files.
+"No validation" to only export files.
 
 ---
 
@@ -293,19 +303,25 @@ depth, bitrate, channels and file size. Choose "Custom" to set your own rules, o
 - Transcoding depends on available ffmpeg encoders (see the dependency section above)
 - If the upstream video is not file-backed, the node serialises it to an in-memory
   buffer first, which is slower — prefer "Load Video (Advanced)" as the upstream node
-- **The "📁 选择本地文件" (pick local file) button is Windows-only** — it opens the native
-  system dialog. On other platforms just type an absolute path into `文件路径`; every other
-  feature (refresh input list, in-node audio/video preview) is cross-platform
+- Upload, refresh and in-node preview all happen in the browser and work cross-platform
 
 ---
 
 ## Development
 
-Two smoke tests are included:
+Two smoke tests are included. Both generate their own material with ffmpeg and drop
+it into the `input` directory:
 
 ```bash
 python _smoke_test.py    # audio nodes
 python _video_test.py    # video nodes
+```
+
+They walk up from their own location to find the ComfyUI root; set `COMFY_ROOT`
+to point at it explicitly if needed:
+
+```bash
+COMFY_ROOT=/path/to/ComfyUI python _smoke_test.py
 ```
 
 ## License

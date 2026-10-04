@@ -47,8 +47,6 @@ _PLAYBACK_ORDER = ("MP3", "WAV", "FLAC", "OPUS")
 
 _AUDIO_EXTS = ("wav", "mp3", "opus", "flac")
 
-_CHANNEL_TEXT = {"双声道": "双声道", "单声道": "单声道", "不限": "不限", "自动（跟随源）": "跟随源"}
-
 # MP3 V0 为 VBR，平均码率约 245kbps，用于平台码率校验
 _MP3_V0_KBPS = 245
 
@@ -81,87 +79,298 @@ MEDIA_EXTENSIONS = (
     "wmv", "mpg", "mpeg", "vob", "3gp", "rm", "rmvb", "ogv",
 )
 
-# 国内主流平台预设：常见审核要求参考值。平台规则可能调整，必要时改用「自定义」。
+# 国内主流平台预设：常见审核要求参考值。平台规则可能调整，必要时改用「Custom」。
 _PLATFORM_PRESETS = {
-    "汽水音乐": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
-    "网易云音乐": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
-    "QQ音乐": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
-    "酷狗音乐": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
-    "抖音": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
-    "快手": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 192, "channels": "stereo", "max_mb": 200},
-    "哔哩哔哩": {"formats": "wav,flac,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
+    "Soda Music": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
+    "QQ Music": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
+    "NetEase Cloud Music": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
+    "Kugou Music": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
+    "Douyin": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
+    "Kuaishou": {"formats": "wav,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 192, "channels": "stereo", "max_mb": 200},
+    "Bilibili": {"formats": "wav,flac,mp3", "min_rate": 44100, "min_bits": 16, "min_kbps": 320, "channels": "stereo", "max_mb": 200},
 }
 
-# 预设下拉项：具体平台 + 自定义 + 不校验
-_PRESET_CHOICES = list(_PLATFORM_PRESETS.keys()) + ["自定义", "不校验"]
+# 旧版中文平台名 → 现用英文名。用于读取旧工作流中的平台预设值。
+# 汽水音乐与 QQ 音乐是两个不同平台，在旧版本里也是分开的两项，
+# 因此这里必须一一对应，不能合并。
+_PLATFORM_ALIASES = {
+    "汽水音乐": "Soda Music",
+    "QQ音乐": "QQ Music",
+    "网易云音乐": "NetEase Cloud Music",
+    "酷狗音乐": "Kugou Music",
+    "抖音": "Douyin",
+    "快手": "Kuaishou",
+    "哔哩哔哩": "Bilibili",
+    "自定义": "Custom",
+    "不校验": "No validation",
+}
+
+CUSTOM_PRESET = "Custom"
+NO_CHECK_PRESET = "No validation"
+
+# 预设下拉项：具体平台 + Custom + No validation
+_PRESET_CHOICES = list(_PLATFORM_PRESETS.keys()) + [CUSTOM_PRESET, NO_CHECK_PRESET]
 
 # AUDIO 数据里携带源文件信息的键名（节点直连时用于判断能否「同格式直出」）
 _SOURCE_KEY = "_audio_source"
 
 
 # ---------------------------------------------------------------------------
-# 下拉选项汉化
+# 报告语言
 #
-# 节点界面上所有下拉项一律使用中文；内部计算仍使用规范化值。
-# 旧版工作流里保存过 auto / stereo / mono / V0 等英文选项，
-# 因此读取时统一走 _norm_choice() 归一化，保证老工作流打开后不会报错。
+# 报告文本本身不受 ComfyUI 的 locale 机制管理（它是一个普通的字符串输出），
+# 所以语言由节点上的开关决定。默认跟随界面语言：ComfyUI 界面为中文时出中文
+# 报告，为英文时出英文报告；也可以在节点上手动锁定某一种语言。
 # ---------------------------------------------------------------------------
 
-AUTO = "自动（跟随源）"
-STEREO = "双声道"
-MONO = "单声道"
-UNLIMITED = "不限"
-V0_BEST = "V0（最高质量）"
+LANG_FOLLOW_UI = "Follow UI language"
+LANG_EN = "English"
+LANG_ZH = "中文"
+LANG_CHOICES = [LANG_FOLLOW_UI, LANG_EN, LANG_ZH]
 
+_LANG_ALIASES = {
+    "auto": LANG_FOLLOW_UI,
+    "follow": LANG_FOLLOW_UI,
+    "跟随界面": LANG_FOLLOW_UI,
+    "跟随界面语言": LANG_FOLLOW_UI,
+    "en": LANG_EN,
+    "english": LANG_EN,
+    "英文": LANG_EN,
+    "zh": LANG_ZH,
+    "cn": LANG_ZH,
+    "chinese": LANG_ZH,
+    "中文": LANG_ZH,
+}
+
+# 前端上报的界面语言。用可变容器而不是普通变量，方便测试里替换。
+_UI_LANGUAGE = {"value": ""}
+
+# 报告文案。key 为英文，值为 (中文, English)；语言在 _tr() 里选择。
+_TR = {
+    # 加载节点
+    "loaded":            ("已加载：{name}", "Loaded: {name}"),
+    "source_dir":        ("来源：ComfyUI input 目录", "Source: ComfyUI input directory"),
+    "path":              ("路径：{path}", "Path: {path}"),
+    "sample_rate_ch":    ("采样率：{rate} Hz    声道：{ch}", "Sample rate: {rate} Hz    Channels: {ch}"),
+    "original_duration": ("原始时长：{dur}", "Original duration: {dur}"),
+    "bitrate":           ("码率：约 {kbps} kbps（{kind}）", "Bitrate: approx {kbps} kbps ({kind})"),
+    "lossless":          ("无损", "lossless"),
+    "lossy":             ("有损", "lossy"),
+    "from_video":        ("视频文件：是（已从中提取音频）", "Video file: yes (audio extracted from it)"),
+    "multi_audio":       ("音频流数：共 {n} 条（使用第 {used} 条）", "Audio streams: {n} (using track {used})"),
+    "truncated":         ("已截断：{start}s - {end}s（{dur}，模式：{mode}）",
+                          "Truncated: {start}s - {end}s ({dur}, mode: {mode})"),
+    "output":            ("输出：{dur} / {rate} Hz / {ch}", "Output: {dur} / {rate} Hz / {ch}"),
+    "res_fps":           ("分辨率：{w}x{h}    帧率：{fps}", "Resolution: {w}x{h}    Frame rate: {fps}"),
+    "v_codec":           ("视频编码：{v}", "Video codec: {v}"),
+    "audio_yes":         ("音轨：有（{codec} / {rate} Hz / {ch}）",
+                          "Audio track: yes ({codec} / {rate} Hz / {ch})"),
+    "v_streams":         ("视频流数：第 {used} 条，共 {n} 条",
+                          "Video streams: #{used} of {n}"),
+    "trunc_to_end":      ("已截断：{start}s 到结尾（模式：{mode}）",
+                          "Truncated: {start}s to the end (mode: {mode})"),
+    "text_end":          ("结尾", "end"),
+    "v_output":          ("输出：{dur} / {w}x{h} / {fps}",
+                          "Output: {dur} / {w}x{h} / {fps}"),
+
+    # 平台合规报告
+    "check_disabled":    ("平台合规检查：已关闭（预设 = 不校验）",
+                          "Platform compliance check: disabled (preset = No validation)"),
+    "check_title":       ("平台合规检查（平台：{plat} - {cond}）",
+                          "Platform compliance check (platform: {plat} - {cond})"),
+    "cond_preset":       ("预设条件", "preset conditions"),
+    "cond_disabled":     ("已关闭", "disabled"),
+    "cond_custom":       ("自定义条件", "custom conditions"),
+    "requirements":      ("要求：", "Requirements: "),
+    "req_formats":       ("格式={v}", "formats={v}"),
+    "req_rate":          ("采样率≥{v}kHz", "sample rate>={v}kHz"),
+    "req_bits":          ("位深≥{v}bit（仅 WAV）", "bit depth>={v}bit (WAV only)"),
+    "req_bitrate":       ("码率≥{v}kbps（仅 MP3/OPUS）", "bitrate>={v}kbps (MP3/OPUS only)"),
+    "req_channels":      ("声道={v}", "channels={v}"),
+    "req_size":          ("单文件≤{v}MB", "file size<={v}MB"),
+    "not_set":           ("未设置", "not set"),
+    "source_file":       ("源文件：{name}（{fmt}）", "Source file: {name}  ({fmt})"),
+    "adapted":           ("适配参数：{v}", "Adapted parameters: {v}"),
+    "lossless_master":   ("无损母带", "lossless master"),
+    "approx":            ("约 {v}kbps", "approx {v}kbps"),
+    "tag_same_format":   ("（同格式直转）", " (same-format copy)"),
+    "tag_extra":         ("（额外格式）", " (extra)"),
+    "note_rate_low":     ("采样率<{v}kHz", "sample rate<{v}kHz"),
+    "note_bits_low":     ("位深<{v}bit", "bit depth<{v}bit"),
+    "note_bitrate_low":  ("码率<{v}kbps", "bitrate<{v}kbps"),
+    "note_not_stereo":   ("非双声道", "not stereo"),
+    "note_not_mono":     ("非单声道", "not mono"),
+    "note_size_over":    ("文件超过 {v}MB", "file size over {v}MB"),
+    "copied_direct":     ("有 {n} 个格式与源文件一致，已原样复制（瞬时，未重新编码）",
+                          "{n} format(s) matched the source and were copied as-is "
+                          "(instant, no re-encoding)"),
+    "output_folder":     ("输出目录：{folder}", "Output folder: {folder}"),
+    "preview_file":      ("试听文件：{name}", "Preview file: {name}"),
+    "result":            ("结果：{v}", "Result: {v}"),
+    "v_disabled":        ("平台校验已关闭，文件已写出", "Platform validation disabled; files were written"),
+    "v_no_formats":      ("未设置合格格式，未做平台校验", "No accepted formats set; no platform validation was performed"),
+    "v_no_match":        ("未产出平台要求的格式（要求：{v}）",
+                          "No format required by the platform was produced (required: {v})"),
+    "v_ok":              ("“{plat}”的全部要求均已满足", "All requirements for \"{plat}\" are satisfied"),
+    "v_bad":             ("部分要求未满足，请调整参数", "Some requirements are not met; adjust the parameters"),
+
+    # 视频报告
+    "video_report":      ("视频报告", "Video report"),
+    "source_label":      ("源文件", "Source"),
+    "exported":          ("输出文件：{n} 个", "Exported files: {n}"),
+    "exported_none":     ("输出文件：无记录", "Exported files: none recorded"),
+    "container":         ("封装格式", "Container"),
+    "resolution":        ("分辨率", "Resolution"),
+    "fps":               ("帧率", "Frame rate"),
+    "video_codec":       ("视频编码", "Video codec"),
+    "pixel_format":      ("像素格式", "Pixel format"),
+    "duration":          ("时长", "Duration"),
+    "file_size":         ("文件大小", "File size"),
+    "audio_track":       ("音轨", "Audio"),
+    "no_audio_track":    ("无", "none"),
+    "video_streams":     ("视频流数：{n}", "Video streams: {n}"),
+    "reencoded":         ("重新编码", "transcoded"),
+    "direct_copy":       ("同格式直转（未重新编码）", "same-format copy (no re-encoding)"),
+    "export_label":      ("输出 {n}（{kind}，{how}）", "Export {n} ({kind}, {how})"),
+    "probe_failed":      ("（无法读取该文件的参数：{error}）",
+                          "(could not read this file's parameters: {error})"),
+    "file_missing":      ("（文件不存在：{path}）", "(file does not exist: {path})"),
+    "not_file_input":    ("源文件：不是文件型输入（无磁盘上的源文件可检查）",
+                          "Source: not a file-backed input (no source file on disk to inspect)"),
+}
+
+
+def _tr(key, lang, **kw):
+    """按语言取出报告文案并格式化。"""
+    entry = _TR.get(key)
+    if entry is None:
+        return key
+    text = entry[0] if lang == "zh" else entry[1]
+    return text.format(**kw) if kw else text
+
+
+def _channel_label(value, lang):
+    """声道数的报告用名称。"""
+    if lang != "zh":
+        return value
+    return {STEREO: "双声道", MONO: "单声道", UNLIMITED: "不限"}.get(value, value)
+
+
+def _norm_lang(value):
+    """把语言开关归一为标准值，兼容旧工作流与大小写差异。"""
+    text = str("" if value is None else value).strip()
+    if text in LANG_CHOICES:
+        return text
+    return _LANG_ALIASES.get(text.lower(), text)
+
+
+def _ui_language():
+    """返回前端上报的界面语言；未上报时按英文处理。
+
+    ComfyUI 的界面语言只存在于浏览器端，后端无法自行读取，所以由
+    web/media_toolbox.js 在启动与语言切换时通过
+    POST /audio_platform_export/ui_language 上报到这里。
+    """
+    return _UI_LANGUAGE["value"]
+
+
+def set_ui_language(locale):
+    """记录前端上报的界面语言。"""
+    text = str(locale or "").strip()
+    _UI_LANGUAGE["value"] = text
+    return text
+
+
+def _resolve_report_lang(value):
+    """把开关值解析为最终报告语言，返回 "zh" 或 "en"。"""
+    lang = _norm_lang(value)
+    if lang == LANG_ZH:
+        return "zh"
+    if lang == LANG_EN:
+        return "en"
+    return "zh" if _ui_language().lower().startswith("zh") else "en"
+
+
+# ---------------------------------------------------------------------------
+# 下拉选项
+#
+# 节点界面上所有下拉项一律使用英文；内部计算也直接比较这些英文值。
+# 早期版本的下拉项是中文，且已被写入用户保存的工作流，因此
+# _CHOICE_ALIASES / _TRUNCATE_ALIASES 保留全部旧中文值，
+# 读取时统一走 _norm_choice() / _norm_truncate() 归一化，
+# 保证老工作流打开后不会报错、也不会退化成 Unknown 选项。
+# 中文界面请通过 locales/zh/ 由 ComfyUI 的语言机制提供。
+# ---------------------------------------------------------------------------
+
+AUTO = "Auto (follow source)"
+STEREO = "Stereo"
+MONO = "Mono"
+UNLIMITED = "Any"
+V0_BEST = "V0 (highest quality)"
+
+# 旧版中文值 → 现用英文值。读取工作流时用它把历史值映射到当前选项。
 _CHOICE_ALIASES = {
     "auto": AUTO,
     "stereo": STEREO,
     "mono": MONO,
     "unlimited": UNLIMITED,
     "v0": V0_BEST,
+    "自动（跟随源）": AUTO,
+    "双声道": STEREO,
+    "单声道": MONO,
+    "不限": UNLIMITED,
+    "V0（最高质量）": V0_BEST,
 }
 
 # 截断方式：显示值即语义，内部直接比较显示值
-TRUNCATE_NONE = "不截断（使用完整音频）"
-TRUNCATE_HEAD = "只取开头一段（0 秒 → 截取时长）"
-TRUNCATE_RANGE = "只取中间一段（起点 → 终点）"
-TRUNCATE_TAIL = "从起点一直到结尾（起点 → 末尾）"
+TRUNCATE_NONE = "No truncation (use the whole file)"
+TRUNCATE_HEAD = "Head segment only (0 s -> duration)"
+TRUNCATE_RANGE = "Middle range only (start -> end)"
+TRUNCATE_TAIL = "From start to the end (start -> end of file)"
 
 TRUNCATE_CHOICES = [TRUNCATE_NONE, TRUNCATE_HEAD, TRUNCATE_RANGE, TRUNCATE_TAIL]
 
-# 旧工作流保存的截断方式 → 新显示值
 _TRUNCATE_ALIASES = {
+    TRUNCATE_NONE: TRUNCATE_NONE,
+    TRUNCATE_HEAD: TRUNCATE_HEAD,
+    TRUNCATE_RANGE: TRUNCATE_RANGE,
+    TRUNCATE_TAIL: TRUNCATE_TAIL,
     "不截断": TRUNCATE_NONE,
+    "不截断（使用完整音频）": TRUNCATE_NONE,
     "从头截取时长": TRUNCATE_HEAD,
+    "只取开头一段（0 秒 → 截取时长）": TRUNCATE_HEAD,
     "起点到终点": TRUNCATE_RANGE,
+    "只取中间一段（起点 → 终点）": TRUNCATE_RANGE,
     "起点到结尾": TRUNCATE_TAIL,
+    "从起点一直到结尾（起点 → 末尾）": TRUNCATE_TAIL,
 }
 
 
 def _norm_choice(value):
-    """把下拉值归一为中文显示值，兼容旧工作流中的英文选项。"""
+    """把下拉值归一为英文标准值，兼容旧工作流中的中文与早期英文选项。"""
     text = str("" if value is None else value).strip()
     if text in _CHOICE_ALIASES.values():
         return text
-    return _CHOICE_ALIASES.get(text.lower(), _CHOICE_ALIASES.get(text, text))
+    if text in _CHOICE_ALIASES:
+        return _CHOICE_ALIASES[text]
+    return _CHOICE_ALIASES.get(text.lower(), text)
 
 
 def _norm_truncate(value):
-    """把截断方式归一为新的中文显示值，兼容旧工作流。"""
+    """把截断方式归一为英文标准值，兼容旧工作流中的中文选项。"""
     text = str("" if value is None else value).strip()
     return _TRUNCATE_ALIASES.get(text, text)
 
 
 def _choice_int(value, default):
-    """从下拉值里取出整数（兼容 "24 位" / 旧版纯数字 "24"）。"""
-    head = str(value).split("（")[0]
-    digits = re.sub(r"\D", "", head)
+    """从下拉值里取出整数（兼容 "24-bit" / 旧版中文 "24 位" / 纯数字 "24"）。"""
+    digits = re.sub(r"\D", "", str(value))
     return int(digits) if digits else default
 
 
 def _sample_rate_hz(value, default):
-    """把采样率下拉值解析成 Hz，兼容 "44.1 kHz" / "48000 Hz" / 旧版纯数字。"""
-    head = str(value).split("（")[0].strip().lower()
+    """把采样率下拉值解析成 Hz，兼容 "44.1 kHz" / "48000 Hz" / 旧版中文写法。"""
+    head = str(value).strip().lower()
     match = re.search(r"\d+(?:\.\d+)?", head)
     if not match:
         return default
@@ -174,17 +383,17 @@ def _sample_rate_hz(value, default):
 # ---------------------------------------------------------------------------
 
 # ffmpeg 缺失时的提示。ffmpeg 不是 ComfyUI 自带的，需要单独安装。
-_FFMPEG_HINT = """未找到 ffmpeg，无法进行格式转换。
+_FFMPEG_HINT = """ffmpeg was not found, so format conversion is unavailable.
 
-ffmpeg 不是 ComfyUI 自带的，需要单独安装。请任选一种方式：
+ffmpeg does not ship with ComfyUI and must be installed separately. Pick one of these options:
 
-1. 安装 Python 自带版本（最简单）：
+1. Install the Python-provided build (simplest):
      pip install imageio-ffmpeg
 
-2. 已有 ffmpeg：把 ffmpeg.exe 所在目录加入系统 PATH，
-   或设置环境变量 FFMPEG_BINARY 指向 ffmpeg.exe 后重启 ComfyUI。
+2. Already have ffmpeg: add the directory containing ffmpeg.exe to the system PATH,
+   or set the FFMPEG_BINARY environment variable to the ffmpeg executable, then restart ComfyUI.
 
-可用下面这行命令确认是否已就绪：
+Confirm it is ready with:
   python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
 """
 
@@ -222,7 +431,7 @@ def _f32_pcm(wav):
         return wav.float() / (2 ** 31)
     if wav.dtype == torch.uint8:
         return (wav.float() - 128.0) / 128.0
-    raise ValueError(f"不支持的采样格式：{wav.dtype}")
+    raise ValueError(f"Unsupported sample format: {wav.dtype}")
 
 
 def _read_wav_header(path):
@@ -292,7 +501,7 @@ def _probe_media(path, track_index=0):
 
         streams = list(container.streams.audio)
         if not streams:
-            raise ValueError("该文件不包含音频流，无法加载。")
+            raise ValueError("This file contains no audio stream and cannot be loaded.")
         if track_index >= len(streams):
             track_index = 0
         info["track_index"] = track_index
@@ -328,7 +537,7 @@ def _probe_media(path, track_index=0):
 def _decode_with_av(path, track_index=0):
     """用 PyAV 解码音频/视频文件中的音频流，返回 (波形, 采样率, 声道数)。"""
     if av is None:
-        raise RuntimeError("运行环境缺少 PyAV（av），无法解码音频/视频文件。")
+        raise RuntimeError("PyAV (av) is not available in this environment, so media files cannot be decoded.")
 
     with av.open(path) as container:
         streams = list(container.streams.audio)
@@ -348,7 +557,7 @@ def _decode_with_av(path, track_index=0):
             frames.append(buf)
 
         if not frames:
-            raise ValueError("未能从该文件解码出音频帧。")
+            raise ValueError("No audio frames could be decoded from this file.")
 
         waveform = _f32_pcm(torch.cat(frames, dim=1))
         return waveform, sample_rate, n_channels
@@ -364,7 +573,7 @@ def _decode_with_ffmpeg(path, ffmpeg, track_index=0):
                "-i", path, "-map", f"0:a:{track_index}", "-f", "wav", temp_path]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode != 0:
-            raise RuntimeError("ffmpeg 提取音频失败：" + result.stderr.decode("utf-8", "ignore")[-600:])
+            raise RuntimeError("ffmpeg audio extraction failed: " + result.stderr.decode("utf-8", "ignore")[-600:])
         return _decode_with_av(temp_path, 0)
     finally:
         try:
@@ -401,12 +610,12 @@ def _apply_truncate(waveform, sample_rate, mode, start, end, duration):
         begin, finish = float(start), None
     else:
         raise ValueError(
-            "未知的「截断方式」：" + str(mode) + "。请在节点下拉框中重新选择一项。"
+            "Unknown truncation mode: " + str(mode) + ". Please pick one from the dropdown again."
         )
 
     if finish is not None and finish <= begin:
         raise ValueError(
-            f"「终点」必须大于「起点」：当前起点 {begin:.2f}s、终点 {finish:.2f}s。"
+            f"End must be greater than Start: current start {begin:.2f}s, end {finish:.2f}s."
         )
 
     i0 = max(0, int(round(begin * sample_rate)))
@@ -414,11 +623,11 @@ def _apply_truncate(waveform, sample_rate, mode, start, end, duration):
 
     if i0 >= total:
         raise ValueError(
-            f"「起点」{begin:.2f}s 已超出音频总时长 {total / sample_rate:.2f}s，请调小起点。"
+            f"Start {begin:.2f}s is beyond the total audio duration of {total / sample_rate:.2f}s; reduce Start."
         )
     if i1 <= i0:
         raise ValueError(
-            "截取结果为 0 秒，请检查「截断方式」与下方时间参数是否匹配。"
+            "The truncation result is 0 seconds; check that the truncation mode matches the time parameters below."
         )
 
     return waveform[..., i0:i1], (i0 / sample_rate, i1 / sample_rate)
@@ -426,7 +635,7 @@ def _apply_truncate(waveform, sample_rate, mode, start, end, duration):
 
 def _format_duration(seconds):
     if seconds is None:
-        return "未知"
+        return "unknown"
     seconds = float(seconds)
     minutes, secs = divmod(seconds, 60)
     hours, minutes = divmod(int(minutes), 60)
@@ -494,41 +703,37 @@ def _resolve_destination(filename_prefix, output_dir, default_name="ComfyUI",
                          media_exts=_AUDIO_EXTS):
     """解析文件名前缀，得到最终保存位置。
 
-    相对路径 → ComfyUI output 目录（沿用官方 get_save_image_path 逻辑）
-    绝对路径 → 本地任意目录
+    前缀一律按相对路径处理，落点始终在 ComfyUI 的 output 目录内
+    （沿用官方 get_save_image_path 逻辑）。绝对路径与 ``..`` 一律拒绝：
+    插件不允许在 input / output 之外写入任何文件。
 
-    `media_exts` 列出该节点支持的扩展名；用户填绝对路径时若带扩展名会被剥离，
+    `media_exts` 列出该节点支持的扩展名；前缀带扩展名时会被剥离，
     避免出现「clip.mp4_00001.mp4」这类把扩展名当文件名的情况。
 
-    返回 (目录, 文件名前缀, 序号, subfolder, 是否位于 output 目录内)
+    返回 (目录, 文件名前缀, 序号, subfolder)
     """
     prefix = (filename_prefix or "").strip() or default_name
 
-    if not os.path.isabs(prefix):
-        full_folder, name, counter, subfolder, _ = folder_paths.get_save_image_path(prefix, output_dir)
-        os.makedirs(full_folder, exist_ok=True)
-        return full_folder, name, counter, subfolder, True
+    if os.path.isabs(prefix) or os.path.splitdrive(prefix)[0]:
+        raise ValueError(
+            "Filename prefix must be a relative path inside the ComfyUI output "
+            "directory; absolute paths are rejected.\n"
+            f"Rejected: {prefix}"
+        )
+    if os.path.pardir in prefix.replace("\\", "/").split("/"):
+        raise ValueError(
+            "Filename prefix must not contain '..'; it is resolved inside the "
+            "ComfyUI output directory.\n"
+            f"Rejected: {prefix}"
+        )
 
-    folder = os.path.dirname(prefix) or output_dir
-    stem = os.path.basename(prefix)
     if media_exts:
         pattern = r"\.(" + "|".join(re.escape(e) for e in media_exts) + r")$"
-        stem = re.sub(pattern, "", stem, flags=re.IGNORECASE)
-    name = stem or default_name
-    os.makedirs(folder, exist_ok=True)
-    counter = _next_counter(folder, name)
+        prefix = re.sub(pattern, "", prefix, flags=re.IGNORECASE)
 
-    subfolder = None
-    inside = False
-    try:
-        rel = os.path.relpath(folder, output_dir)
-    except ValueError:
-        rel = None
-    if rel is not None and rel != os.pardir and not rel.startswith(os.pardir + os.sep) and not os.path.isabs(rel):
-        inside = True
-        subfolder = "" if rel == "." else rel.replace(os.sep, "/")
-
-    return folder, name, counter, subfolder, inside
+    full_folder, name, counter, subfolder, _ = folder_paths.get_save_image_path(prefix, output_dir)
+    os.makedirs(full_folder, exist_ok=True)
+    return full_folder, name, counter, subfolder
 
 
 def _ensure_preview(ffmpeg, source_path, kind, output_dir, base):
@@ -590,62 +795,76 @@ def _auto_kbps(source_kbps, source_lossless, choices, lossless_default, lossy_de
 class LoadAudioAdvanced:
     """加载本地音频/视频文件（含绝对路径、视频提取音频、长音频截断）。"""
 
-    CATEGORY = "音频"
+    CATEGORY = "Audio"
     FUNCTION = "load"
     RETURN_TYPES = ("AUDIO", "STRING")
-    RETURN_NAMES = ("音频", "信息")
+    RETURN_NAMES = ("audio", "info")
     DESCRIPTION = (
-        "加载音频或视频文件并输出 AUDIO。\n"
-        "· 文件路径：填本地任意绝对路径（优先级最高），不会复制任何副本\n"
-        "· 音频文件：从 ComfyUI 的 input 目录下拉选择（与官方 Load Audio 一致）\n"
-        "· 视频文件（mp4/mkv/mov/avi/webm/flv/ts…）会自动提取其中的音频\n"
-        "· 长音频截断：从开头取一段、取中间任意区间、或从某一点一直到结尾"
+        "Load an audio or video file and output AUDIO.\n"
+        "• Audio file: pick from the ComfyUI `input` directory (same as official Load Audio).\n"
+        "  To use a local file, drag and drop it into the input directory first.\n"
+        "• Video files (mp4 / mkv / mov / avi / webm / flv / ts…) are accepted and the audio is extracted automatically\n"
+        "• Truncation: take a segment from the start, any middle range, or from a point to the end"
     )
 
     @classmethod
     def INPUT_TYPES(cls):
         files = list_input_media()
         if not files:
-            files = ["(input 目录暂无音频/视频文件)"]
+            files = ["(no audio or video files in the input directory)"]
 
         return {
             "required": {
-                "文件路径": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "tooltip": "本地任意绝对路径，支持音频与视频。填写后优先使用，且不会复制任何副本。",
-                }),
+                # The upload button is added by this plugin's frontend extension
+                # (web/media_toolbox.js) rather than by ComfyUI's own
+                # "audio_upload" / "video_upload" markers. Those markers make
+                # ComfyUI inject its own button plus a built-in player, which
+                # would duplicate the player this plugin already adds.
+                # ComfyUI stores the uploaded file in the input directory and
+                # hands back a relative name, which then goes through the same
+                # input-directory resolution as the listed files.
                 "音频文件": (files, {
-                    "tooltip": "从 ComfyUI 的 input 目录选择文件（当「文件路径」为空时生效）。",
+                    "media_toolbox_upload": "audio",
+                    "tooltip": "Pick a file from the ComfyUI `input` directory, or use the upload "
+                               "button to bring in a file from anywhere on this machine. "
+                               "Video files are listed too, so their audio track can be extracted. "
+                               "The audio is previewed as soon as you pick it, without running the node.",
                 }),
                 "音轨序号": ("INT", {
                     "default": 0, "min": 0, "max": 32, "step": 1,
-                    "tooltip": "多音轨文件（如视频）中要提取的音轨序号，0 表示第一条。",
+                    "tooltip": "Which audio track to use for files with multiple tracks (e.g. videos). 0 means the first track.",
                 }),
                 "截断方式": (TRUNCATE_CHOICES, {
                     "default": TRUNCATE_NONE,
-                    "tooltip": "长音频只取一部分时使用：\n"
-                               "① 只取开头一段：0 秒开始，取「截取时长」秒\n"
-                               "② 只取中间一段：从「起点」到「终点」\n"
-                               "③ 从起点一直到结尾：从「起点」一直用到音频结束\n"
-                               "选第①种时只填「截取时长」；选第②种时填「起点」和「终点」；"
-                               "选第③种时只填「起点」。",
+                    "tooltip": "How to cut a long audio file:\n"
+                               "① Head segment only: from 0 s, take Duration to take seconds\n"
+                               "② Middle range only: from Start to End\n"
+                               "③ From start to the end: use everything from Start to the end of the file\n"
+                               "For ① fill in Duration to take; for ② fill in Start and End; "
+                               "for ③ fill in Start only.",
                 }),
                 "起点(秒)": ("FLOAT", {
                     "default": 0.0, "min": 0.0, "max": 1000000.0, "step": 0.01,
-                    "tooltip": "从哪里开始（秒）。\n"
-                               "只取中间一段：与「终点」配合使用。\n"
-                               "从起点一直到结尾：作为开始位置，忽略「终点」。",
+                    "tooltip": "Where to start (seconds).\n"
+                               "Middle range: used together with End.\n"
+                               "From start to the end: the starting position; End is ignored.",
                 }),
                 "终点(秒)": ("FLOAT", {
                     "default": 0.0, "min": 0.0, "max": 1000000.0, "step": 0.01,
-                    "tooltip": "到哪里结束（秒），必须大于「起点」。\n"
-                               "只在「只取中间一段」模式下生效，其余模式忽略。",
+                    "tooltip": "Where to stop (seconds). Must be greater than Start.\n"
+                               "Only applies to the Middle range mode; ignored in other modes.",
                 }),
                 "截取时长(秒)": ("FLOAT", {
                     "default": 60.0, "min": 0.0, "max": 1000000.0, "step": 0.01,
-                    "tooltip": "要取多长（秒）。从音频开头算起，所以起点固定是 0 秒。\n"
-                               "只在「只取开头一段」模式下生效，其余模式忽略。",
+                    "tooltip": "How much to take (seconds), measured from the beginning of the file, "
+                               "so the start is fixed at 0 s.\n"
+                               "Only applies to the Head segment mode; ignored in other modes.",
+                }),
+                "报告语言": (LANG_CHOICES, {
+                    "default": LANG_FOLLOW_UI,
+                    "tooltip": "Language of this node's report text. "
+                               "\"Follow UI language\" produces a Chinese report while the "
+                               "ComfyUI interface is Chinese, and an English report otherwise.",
                 }),
             }
         }
@@ -653,7 +872,7 @@ class LoadAudioAdvanced:
     def load(self, **kwargs):
         ffmpeg = find_ffmpeg()
 
-        raw_path = str(kwargs.get("文件路径", "") or "").strip().strip('"').strip("'")
+        lang = _resolve_report_lang(kwargs.get("报告语言", LANG_FOLLOW_UI))
         combo = str(kwargs.get("音频文件", "") or "").strip()
         track_index = int(kwargs.get("音轨序号", 0) or 0)
         mode = _norm_truncate(kwargs.get("截断方式", TRUNCATE_NONE))
@@ -661,18 +880,16 @@ class LoadAudioAdvanced:
         end = float(kwargs.get("终点(秒)", 0.0) or 0.0)
         duration = float(kwargs.get("截取时长(秒)", 0.0) or 0.0)
 
-        from_abs = bool(raw_path)
-        if raw_path:
-            path = os.path.expandvars(os.path.expanduser(raw_path))
-            if not os.path.isabs(path):
-                path = os.path.join(folder_paths.get_input_directory(), path)
-        elif combo and not combo.startswith("("):
+        if combo and not combo.startswith("("):
             path = folder_paths.get_annotated_filepath(combo)
+            path = _resolve_within_roots(path, label="audio file")
         else:
-            raise ValueError("请填写「文件路径」（本地绝对路径），或在「音频文件」中选择一个文件。")
+            raise ValueError(
+            "Please pick a file from the ComfyUI input directory in 'Audio file'."
+        )
 
         if not os.path.isfile(path):
-            raise ValueError(f"找不到文件：{path}")
+            raise ValueError(f"File not found: {path}")
 
         info = _probe_media(path, track_index)
         waveform, sample_rate, channels = load_media(path, track_index, ffmpeg)
@@ -690,42 +907,43 @@ class LoadAudioAdvanced:
             _SOURCE_KEY: info,
         }
 
-        lines = [f"已加载：{os.path.basename(path)}"]
-        lines.append("来源：" + ("本地绝对路径（未复制副本）" if from_abs else "ComfyUI input 目录"))
-        lines.append(f"路径：{path}")
-        fmt_desc = info.get("format") or "未知"
+        lines = [_tr("loaded", lang, name=os.path.basename(path))]
+        lines.append(_tr("source_dir", lang))
+        lines.append(_tr("path", lang, path=path))
+        fmt_desc = info.get("format") or "unknown"
         if info.get("codec"):
             fmt_desc += f" / {info['codec']}"
         if info.get("bits"):
             fmt_desc += f" / {info['bits']}bit"
-        lines.append(f"格式：{fmt_desc}")
-        lines.append(f"采样率：{sample_rate} Hz    声道：{channels}")
+        lines.append(f"Format: {fmt_desc}")
+        lines.append(_tr("sample_rate_ch", lang, rate=sample_rate, ch=channels))
         if info.get("duration"):
-            lines.append(f"原始时长：{_format_duration(info['duration'])}")
+            lines.append(_tr("original_duration", lang, dur=_format_duration(info["duration"])))
         if info.get("bitrate_kbps"):
-            kind_text = "无损" if info.get("is_lossless") else "有损"
-            lines.append(f"码率：约 {info['bitrate_kbps']} kbps（{kind_text}）")
+            kind_text = _tr("lossless" if info.get("is_lossless") else "lossy", lang)
+            lines.append(_tr("bitrate", lang, kbps=info["bitrate_kbps"], kind=kind_text))
         if info.get("audio_streams", 1) > 1:
-            lines.append(f"音轨：第 {info.get('track_index', 0) + 1} 条 / 共 {info['audio_streams']} 条")
+            lines.append(_tr("multi_audio", lang, n=info["audio_streams"],
+                                       used=info.get("track_index", 0) + 1))
         if info.get("has_video"):
-            lines.append("视频文件：是（已提取其中音频）")
+            lines.append(_tr("from_video", lang))
         if cut_range:
-            lines.append(
-                f"截取：{cut_range[0]:.2f}s ~ {cut_range[1]:.2f}s"
-                f"（共 {cut_range[1] - cut_range[0]:.2f}s，方式：{mode}）"
-            )
-        lines.append(
-            f"输出：{_format_duration(info['output_duration'])} / {sample_rate} Hz / {channels}ch"
-        )
+            lines.append(_tr("truncated", lang,
+                                       start=f"{cut_range[0]:.2f}",
+                                       end=f"{cut_range[1]:.2f}",
+                                       dur=f"{cut_range[1] - cut_range[0]:.2f}",
+                                       mode=mode))
+        lines.append(_tr("output", lang,
+                         dur=_format_duration(info["output_duration"]),
+                         rate=sample_rate, ch=f"{channels}ch"))
         report = "\n".join(lines)
-        print("[加载音频] " + report.replace("\n", "\n[加载音频] "))
+        print("[Load Audio] " + report.replace("\n", "\n[Load Audio] "))
 
-        preview_url = None
-        if av is not None or ffmpeg:
-            preview_url = "/audio_platform_export/view?path=" + _url_quote(path)
-
+        # Inert text line instead of an "audio" entry: the frontend turns this
+        # into a /view URL. The file is always inside the input directory
+        # (enforced by _resolve_within_roots).
         return {
-            "ui": {"text": [report], "audio": [{"url": preview_url}] if preview_url else []},
+            "ui": {"text": [report, f"__preview__|input||{os.path.basename(path)}"]},
             "result": (audio, report),
         }
 
@@ -736,17 +954,70 @@ def _url_quote(text):
     return quote(os.path.abspath(text), safe="")
 
 
+def _allowed_roots():
+    """返回允许读写的目录列表（已 realpath 规范化）：仅 input 与 output。"""
+    roots = []
+    for getter in (folder_paths.get_input_directory, folder_paths.get_output_directory):
+        try:
+            roots.append(os.path.realpath(getter()))
+        except Exception:  # pragma: no cover
+            continue
+    return roots
+
+
+def _resolve_within_roots(raw, roots=None, label="path"):
+    """把路径解析到允许的根目录内，越界则抛出 ValueError。
+
+    先 realpath 消解符号链接与 ``..``，再用 commonpath 确认结果确实位于
+    某个根目录内部。两步都必要：realpath 单独用挡不住指向目录内的符号链接，
+    commonpath 单独用挡不住尚未展开的 ``..``。
+    """
+    roots = _allowed_roots() if roots is None else roots
+    text = str(raw or "").strip()
+    if not text:
+        raise ValueError(f"Empty {label}.")
+
+    candidate = os.path.realpath(os.path.expanduser(os.path.expandvars(text)))
+
+    for root in roots:
+        if candidate == root:
+            continue
+        try:
+            if os.path.commonpath([candidate, root]) == root:
+                return candidate
+        except ValueError:
+            # Windows 上跨盘符时 commonpath 会抛 ValueError，视为不匹配
+            continue
+
+    allowed = ", ".join(roots) if roots else "(none)"
+    raise ValueError(
+        "This node only reads and writes inside the ComfyUI input/output directories.\n"
+        f"Rejected {label}: {text}\n"
+        f"Allowed roots: {allowed}\n"
+        "Upload the file into the input directory (drag and drop in the ComfyUI window), "
+        "then pick it from the file list."
+    )
+
+
 def list_input_media():
-    """列出 ComfyUI input 目录下的音频/视频文件（按扩展名判定，覆盖 opus/m4a 等）。"""
+    """列出 ComfyUI input 目录下的音频/视频文件（按扩展名判定，覆盖 opus/m4a 等）。
+
+    递归子目录：ComfyUI 的 /view 支持 "subfolder/filename" 形式的相对名，
+    所以子文件夹里的媒体文件同样可以直接选中使用。
+    """
     input_dir = folder_paths.get_input_directory()
     os.makedirs(input_dir, exist_ok=True)
     result = []
-    for name in os.listdir(input_dir):
-        if not os.path.isfile(os.path.join(input_dir, name)):
-            continue
-        ext = os.path.splitext(name)[1].lower().lstrip(".")
-        if ext in MEDIA_EXTENSIONS:
-            result.append(name)
+    for base, _dirs, names in os.walk(input_dir):
+        for name in names:
+            full = os.path.join(base, name)
+            if not os.path.isfile(full):
+                continue
+            ext = os.path.splitext(name)[1].lower().lstrip(".")
+            if ext not in MEDIA_EXTENSIONS:
+                continue
+            rel = os.path.relpath(full, input_dir).replace("\\", "/")
+            result.append(rel)
     return sorted(result)
 
 
@@ -757,17 +1028,19 @@ def list_input_media():
 class SaveAudioPlatformExport:
     """一次产出 WAV / MP3 / FLAC / OPUS 多格式，并做平台合规校验。"""
 
-    CATEGORY = "音频"
+    CATEGORY = "Audio"
     FUNCTION = "save"
     RETURN_TYPES = ("STRING", "AUDIO")
-    RETURN_NAMES = ("报告", "音频")
+    RETURN_NAMES = ("report", "audio")
     OUTPUT_NODE = True
     DESCRIPTION = (
-        "把 AUDIO 一次导出为 WAV / MP3 / FLAC / OPUS 多种格式，并给出平台发布合规校验报告。\n"
-        "· 采样率 / 声道 / WAV位深 / MP3码率 / OPUS码率 选择 auto 时，自动适配源音频参数\n"
-        "· 与「加载音频(增强)」直连做格式转换：目标格式与源格式相同且参数为 auto 时，"
-        "直接复制源文件，0 秒完成、不重新编码\n"
-        "· 支持一次勾选多个目标格式"
+        "Export AUDIO to WAV / MP3 / FLAC / OPUS in one run, with a platform compliance report.\n"
+        "• Sample rate / channels / WAV bit depth / MP3 bitrate / OPUS bitrate set to \"Auto\" "
+        "follow the source audio parameters\n"
+        "• Directly connected to \"Load Audio (Advanced)\" for format conversion: when the target format "
+        "matches the source and all parameters are \"Auto\", the source file is copied as-is "
+        "(instant, no re-encoding)\n"
+        "• Multiple target formats can be produced in a single run"
     )
 
     def __init__(self):
@@ -777,61 +1050,69 @@ class SaveAudioPlatformExport:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "音频": ("AUDIO", {"tooltip": "任意音频输出节点的 AUDIO 输入。"}),
+                "音频": ("AUDIO", {"tooltip": "The AUDIO input of any audio output node."}),
                 "文件名前缀": ("STRING", {
                     "default": "audio/ComfyUI",
-                    "tooltip": "相对路径存到 ComfyUI output 目录；也可填绝对路径存到本地任意目录。",
+                    "tooltip": "A relative path inside the ComfyUI output directory. "
+                               "Absolute paths are rejected.",
                 }),
                 "导出WAV": ("BOOLEAN", {"default": True}),
-                "WAV位深": ([AUTO, "16 位", "24 位", "32 位"], {
+                "WAV位深": ([AUTO, "16-bit", "24-bit", "32-bit"], {
                     "default": AUTO,
-                    "tooltip": "WAV 的采样位深。「自动」跟随源音频位深（识别不到时按 16 位）。",
+                    "tooltip": "WAV sample bit depth. \"Auto\" follows the source bit depth (16-bit if unknown).",
                 }),
                 "导出MP3": ("BOOLEAN", {"default": True}),
                 "MP3码率": ([AUTO, V0_BEST, "128 kbps", "192 kbps", "256 kbps", "320 kbps"], {
                     "default": AUTO,
-                    "tooltip": "MP3 码率。「自动」时：无损源用 320 kbps，有损源不超过源码率；"
-                               "「V0」为可变码率最高质量。",
+                    "tooltip": "MP3 bitrate. \"Auto\" uses 320 kbps for lossless sources and never exceeds "
+                               "a lossy source's bitrate; \"V0\" is variable-bitrate highest quality.",
                 }),
                 "导出OPUS": ("BOOLEAN", {"default": False}),
                 "OPUS码率": ([AUTO, "64 kbps", "96 kbps", "128 kbps", "192 kbps", "320 kbps"], {
                     "default": AUTO,
-                    "tooltip": "OPUS 码率。「自动」时：无损源用 192 kbps，有损源不超过源码率。",
+                    "tooltip": "OPUS bitrate. \"Auto\" uses 192 kbps for lossless sources and never exceeds "
+                               "a lossy source's bitrate.",
                 }),
                 "保留FLAC": ("BOOLEAN", {"default": True}),
                 "采样率": ([AUTO, "44.1 kHz", "48 kHz", "96 kHz"], {
                     "default": AUTO,
-                    "tooltip": "采样率。「自动」跟随源音频采样率。",
+                    "tooltip": "Sample rate. \"Auto\" follows the source sample rate.",
                 }),
                 "声道": ([AUTO, STEREO, MONO], {
                     "default": AUTO,
-                    "tooltip": "声道数。「自动」跟随源音频声道数。",
+                    "tooltip": "Channel count. \"Auto\" follows the source channel count.",
                 }),
-                "平台预设": (_PRESET_CHOICES, {"default": "汽水音乐"}),
-                "平台名称": ("STRING", {"default": "汽水音乐"}),
+                "平台预设": (_PRESET_CHOICES, {"default": "Soda Music"}),
+                "平台名称": ("STRING", {"default": "Soda Music"}),
                 "合格格式": ("STRING", {"default": "wav,mp3"}),
                 "最低采样率": ("INT", {"default": 44100, "min": 8000, "max": 192000, "step": 100,
-                                  "tooltip": "平台要求的最低采样率（Hz）。"}),
+                                  "tooltip": "Minimum sample rate required by the platform (Hz)."}),
                 "最低位深": ("INT", {"default": 16, "min": 8, "max": 32,
-                                "tooltip": "平台要求的最低位深（bit），仅对 WAV 生效。"}),
+                                "tooltip": "Minimum bit depth required by the platform (bit); applies to WAV only."}),
                 "最低码率kbps": ("INT", {"default": 320, "min": 0, "max": 1000, "step": 1,
-                                   "tooltip": "平台要求的最低码率（kbps），仅对 MP3 / OPUS 生效。"}),
+                                   "tooltip": "Minimum bitrate required by the platform (kbps); applies to MP3 / OPUS only."}),
                 "要求声道": ([STEREO, MONO, UNLIMITED], {
                     "default": STEREO,
-                    "tooltip": "平台要求的声道数。",
+                    "tooltip": "Channel count required by the platform.",
                 }),
                 "文件大小上限MB": ("INT", {"default": 200, "min": 1, "max": 4096,
-                                     "tooltip": "单个音频文件的体积上限（MB），超过即视为不合规。"}),
+                                     "tooltip": "Maximum size of a single audio file (MB). Anything larger is treated as non-compliant."}),
+                "报告语言": (LANG_CHOICES, {
+                    "default": LANG_FOLLOW_UI,
+                    "tooltip": "Language of the compliance report. "
+                               "\"Follow UI language\" produces a Chinese report while the "
+                               "ComfyUI interface is Chinese, and an English report otherwise.",
+                }),
             }
         }
 
     def save(self, 音频, 文件名前缀, 导出WAV, WAV位深, 导出MP3, MP3码率,
              导出OPUS, OPUS码率, 保留FLAC, 采样率, 声道,
              平台预设, 平台名称, 合格格式, 最低采样率, 最低位深, 最低码率kbps,
-             要求声道, 文件大小上限MB):
+             要求声道, 文件大小上限MB, 报告语言=LANG_FOLLOW_UI):
         ffmpeg = find_ffmpeg()
         if 音频 is None:
-            raise ValueError("音频 输入为空（上游节点没有音频输出）")
+            raise ValueError("The Audio input is empty (the upstream node produced no audio).")
         if not ffmpeg:
             raise RuntimeError(_FFMPEG_HINT)
 
@@ -871,28 +1152,29 @@ class SaveAudioPlatformExport:
             opus_kbps = _choice_int(OPUS码率, 128)
 
         # ---- 平台校验条件 ----
+        平台预设 = _PLATFORM_ALIASES.get(str(平台预设 or "").strip(), 平台预设)
         cfg = _PLATFORM_PRESETS.get(平台预设)
-        no_check = 平台预设 == "不校验"
+        no_check = 平台预设 == NO_CHECK_PRESET
         if cfg:
             plat_name = 平台预设
-            cond_text = "预设条件"
+            cond_key = "cond_preset"
             allowed = _parse_formats(cfg["formats"])
             min_rate, min_bits = cfg["min_rate"], cfg["min_bits"]
             min_kbps, want_ch, max_mb = cfg["min_kbps"], _norm_choice(cfg["channels"]), cfg["max_mb"]
         elif no_check:
-            plat_name = "不校验"
-            cond_text = "已关闭"
+            plat_name = NO_CHECK_PRESET
+            cond_key = "cond_disabled"
             allowed = set()
             min_rate = min_bits = min_kbps = 0
             want_ch, max_mb = UNLIMITED, 0
         else:
-            plat_name = 平台名称.strip() or "自定义"
-            cond_text = "自定义条件"
+            plat_name = 平台名称.strip() or CUSTOM_PRESET
+            cond_key = "cond_custom"
             allowed = _parse_formats(合格格式)
             min_rate, min_bits = 最低采样率, 最低位深
             min_kbps, want_ch, max_mb = 最低码率kbps, 要求声道, 文件大小上限MB
 
-        folder, name, counter, subfolder, inside_output = _resolve_destination(
+        folder, name, counter, subfolder = _resolve_destination(
             文件名前缀, self.output_dir, default_name="audio/ComfyUI")
         base = f"{name}_{counter:05}"
 
@@ -907,7 +1189,7 @@ class SaveAudioPlatformExport:
         if 保留FLAC:
             targets.append(("FLAC", "flac"))
         if not targets:
-            raise ValueError("至少要勾选一种输出格式（WAV / MP3 / OPUS / FLAC）")
+            raise ValueError("Select at least one output format (WAV / MP3 / OPUS / FLAC).")
 
         # ---- 判断哪些目标可以「同格式直出」 ----
         source_path = source_info.get("path") if source_info else None
@@ -959,7 +1241,7 @@ class SaveAudioPlatformExport:
             pcm = np.ascontiguousarray(waveform.transpose(1, 0)).astype("<f4").tobytes()
             result = subprocess.run(cmd, input=pcm, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode != 0:
-                raise RuntimeError("ffmpeg 转换失败：\n" + result.stderr.decode("utf-8", "ignore")[-1200:])
+                raise RuntimeError("ffmpeg conversion failed:\n" + result.stderr.decode("utf-8", "ignore")[-1200:])
 
         # ---- 同格式直出：直接复制源文件 ----
         final_produced = []
@@ -970,17 +1252,24 @@ class SaveAudioPlatformExport:
         produced = final_produced
 
         # ---- 生成报告 ----
-        allowed_text = "/".join(sorted(allowed)) if allowed else "未设置"
+        lang = _resolve_report_lang(报告语言)
+        allowed_text = "/".join(sorted(allowed)) if allowed else _tr("not_set", lang)
 
         if no_check:
-            lines = ["平台发布校验：已关闭（预设 = 不校验）", ""]
+            lines = [_tr("check_disabled", lang), ""]
         else:
-            reqs = [f"合格格式={allowed_text}", f"采样率≥{min_rate / 1000:.1f}kHz",
-                    f"位深≥{min_bits}bit(仅WAV)"]
+            reqs = [_tr("req_formats", lang, v=allowed_text),
+                    _tr("req_rate", lang, v=f"{min_rate / 1000:.1f}"),
+                    _tr("req_bits", lang, v=min_bits)]
             if min_kbps:
-                reqs.append(f"码率≥{min_kbps}kbps(仅MP3/OPUS)")
-            reqs += [f"声道={_CHANNEL_TEXT.get(want_ch, want_ch)}", f"文件大小≤{max_mb}MB"]
-            lines = [f"平台发布校验（平台：{plat_name} · {cond_text}）", "要求：" + " · ".join(reqs), ""]
+                reqs.append(_tr("req_bitrate", lang, v=min_kbps))
+            reqs += [_tr("req_channels", lang, v=_channel_label(want_ch, lang)),
+                     _tr("req_size", lang, v=max_mb)]
+            lines = [
+                _tr("check_title", lang, plat=plat_name, cond=_tr(cond_key, lang)),
+                _tr("requirements", lang) + " | " + " | ".join(reqs),
+                "",
+            ]
 
         if source_info:
             adapt_parts = [f"{out_rate}Hz", f"{out_channels}ch"]
@@ -990,8 +1279,9 @@ class SaveAudioPlatformExport:
                 adapt_parts.append(f"MP3 {mp3_kbps}kbps")
             if 导出OPUS:
                 adapt_parts.append(f"OPUS {opus_kbps}kbps")
-            lines.insert(0, f"源文件：{os.path.basename(source_path)}  （{source_format}）")
-            lines.insert(1, "适配参数：" + " / ".join(adapt_parts))
+            lines.insert(0, _tr("source_file", lang,
+                                 name=os.path.basename(source_path), fmt=source_format))
+            lines.insert(1, _tr("adapted", lang, v=" / ".join(adapt_parts)))
             lines.insert(2, "")
 
         platform_ok = True
@@ -1014,12 +1304,11 @@ class SaveAudioPlatformExport:
                 kbps = source_kbps
                 if kind == "WAV":
                     desc = f"{rate / 1000:.1f}kHz / {bits or '?'}bit / {channels}ch"
-                elif kind == "MP3":
-                    desc = f"{rate / 1000:.1f}kHz / 约{kbps or '?'}kbps / {channels}ch"
-                elif kind == "OPUS":
-                    desc = f"{rate / 1000:.1f}kHz / 约{kbps or '?'}kbps / {channels}ch"
+                elif kind in ("MP3", "OPUS"):
+                    desc = (f"{rate / 1000:.1f}kHz / "
+                            + _tr("approx", lang, v=kbps or "?") + f" / {channels}ch")
                 else:
-                    desc = f"{rate / 1000:.1f}kHz / 无损母版 / {channels}ch"
+                    desc = f"{rate / 1000:.1f}kHz / {_tr('lossless_master', lang)} / {channels}ch"
             elif kind == "WAV":
                 info = _read_wav_header(path)
                 rate = info["sample_rate"] if info else out_rate
@@ -1039,79 +1328,71 @@ class SaveAudioPlatformExport:
             else:  # FLAC
                 rate = out_rate
                 channels = out_channels
-                desc = f"{rate / 1000:.1f}kHz / 无损母版 / {channels}ch"
+                desc = f"{rate / 1000:.1f}kHz / {_tr('lossless_master', lang)} / {channels}ch"
 
             if is_platform and not no_check:
                 has_platform = True
                 if rate and rate < min_rate:
                     ok = False
-                    notes.append(f"采样率<{min_rate / 1000:.1f}kHz")
+                    notes.append(_tr("note_rate_low", lang, v=f"{min_rate / 1000:.1f}"))
                 if bits is not None and bits < min_bits:
                     ok = False
-                    notes.append(f"位深<{min_bits}bit")
+                    notes.append(_tr("note_bits_low", lang, v=min_bits))
                 if min_kbps and kbps is not None and kbps < min_kbps:
                     ok = False
-                    notes.append(f"码率<{min_kbps}kbps")
+                    notes.append(_tr("note_bitrate_low", lang, v=min_kbps))
                 if want_ch != UNLIMITED:
                     want = 2 if want_ch == STEREO else 1
                     if channels != want:
                         ok = False
-                        notes.append("非双声道" if want == 2 else "非单声道")
+                        notes.append(_tr("note_not_stereo" if want == 2 else "note_not_mono", lang))
                 if size_mb > max_mb:
                     ok = False
-                    notes.append(f"文件大小超过{max_mb}MB")
+                    notes.append(_tr("note_size_over", lang, v=max_mb))
                 platform_ok = platform_ok and ok
 
             if is_pass:
-                mark, tag = "[直出]", f"{kind}(同格式直出)"
+                mark, tag = "[copy]", kind + _tr("tag_same_format", lang)
             elif no_check:
                 mark, tag = "[--]  ", kind
             else:
                 mark = "[OK]  " if ok else "[FAIL]"
-                tag = kind if is_platform else f"{kind}(附加)"
-            suffix = ("  <- " + "；".join(notes)) if notes else ""
+                tag = kind if is_platform else kind + _tr("tag_extra", lang)
+            suffix = ("  <- " + "; ".join(notes)) if notes else ""
             lines.append(f"{mark} {tag:<12s} {os.path.basename(path)}  {desc}  {size_mb:.2f}MB{suffix}")
 
-        # 试听：output 目录内直接引用；目录外则生成 output 下的试听副本
+        # 试听：文件必定落在 output 目录内，直接引用即可
         playback_kind, playback_path = _pick_playback(produced)
         ui_filename, ui_subfolder, preview_note = os.path.basename(playback_path), subfolder or "", None
 
-        if not inside_output:
-            preview = _ensure_preview(ffmpeg, playback_path, playback_kind, self.output_dir, base)
-            if preview:
-                ui_filename = os.path.basename(preview)
-                ui_subfolder = _PREVIEW_SUBFOLDER
-                preview_note = f"试听副本：{_PREVIEW_SUBFOLDER}/{ui_filename}（源文件在 output 目录之外）"
-            else:
-                ui_filename, ui_subfolder = None, ""
-                preview_note = "源文件在 output 目录之外，节点内试听不可用"
-
         if no_check:
-            verdict = "已关闭平台校验，仅输出文件"
+            verdict = _tr("v_disabled", lang)
         elif not allowed:
-            verdict = "未设置合格格式，未做平台校验"
+            verdict = _tr("v_no_formats", lang)
         elif not has_platform:
-            verdict = f"未产出平台要求的格式（要求：{allowed_text}）"
+            verdict = _tr("v_no_match", lang, v=allowed_text)
         elif platform_ok:
-            verdict = f"全部满足「{plat_name}」要求"
+            verdict = _tr("v_ok", lang, plat=plat_name)
         else:
-            verdict = "存在不满足项，请调整参数"
+            verdict = _tr("v_bad", lang)
 
         if direct_count:
-            lines.append(f"其中 {direct_count} 个格式与源文件一致，已直接复制（0 秒、未重新编码）")
+            lines.append(_tr("copied_direct", lang, n=direct_count))
 
-        lines += ["", f"输出目录：{folder}"]
+        lines += ["", _tr("output_folder", lang, folder=folder)]
         if preview_note:
             lines.append(preview_note)
         if ui_filename:
-            lines.append(f"试听文件：{ui_filename}")
-        lines.append("结果：" + verdict)
+            lines.append(_tr("preview_file", lang, name=ui_filename))
+        lines.append(_tr("result", lang, v=verdict))
 
         report = "\n".join(lines)
-        print("[平台发布] " + report.replace("\n", "\n[平台发布] "))
+        print("[Platform Export] " + report.replace("\n", "\n[Platform Export] "))
 
-        audio_ui = []
+        # Reported as an inert text line rather than an "audio" entry, so the
+        # frontend decides what to preview and no extra built-in widget appears.
+        preview = []
         if ui_filename:
-            audio_ui = [{"filename": ui_filename, "subfolder": ui_subfolder, "type": "output"}]
+            preview.append(f"__preview__|output|{ui_subfolder or ''}|{ui_filename}")
 
-        return {"ui": {"text": [report], "audio": audio_ui}, "result": (report, 音频)}
+        return {"ui": {"text": [report] + preview}, "result": (report, 音频)}

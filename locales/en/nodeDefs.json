@@ -1,0 +1,202 @@
+{
+  "LoadAudioAdvanced": {
+    "display_name": "Load Audio (Advanced)",
+    "description": "Load an audio file and output AUDIO.\n• Audio file: pick from ComfyUI's `input` directory, or use the upload button to bring in a file from anywhere on this machine. The audio is previewed as soon as you pick it, without running the node.\n• Video files (mp4 / mkv / mov / avi / webm / flv / ts…) are accepted and the audio is extracted automatically\n• Truncation: take a segment from the start, any middle range, or from a point to the end",
+    "inputs": {
+      "音频文件": {
+        "name": "Audio file",
+        "tooltip": "Pick a file from the ComfyUI `input` directory, or use the upload button to bring in a file from anywhere on this machine. The player below previews it immediately."
+      },
+      "音轨序号": {
+        "name": "Audio track index",
+        "tooltip": "Which audio track to use for files with multiple tracks (e.g. videos). 0 means the first track."
+      },
+      "截断方式": {
+        "name": "Truncation mode",
+        "tooltip": "How to cut a long audio file:\n① Head segment only: from 0 s, take Duration to take seconds\n② Middle range only: from Start to End\n③ From start to the end: use everything from Start to the end of the file\nFor ① fill in Duration to take; for ② fill in Start and End; for ③ fill in Start only."
+      },
+      "起点(秒)": {
+        "name": "Start (seconds)",
+        "tooltip": "Where to start (seconds).\nMiddle range: used together with End.\nFrom start to the end: the starting position; End is ignored."
+      },
+      "终点(秒)": {
+        "name": "End (seconds)",
+        "tooltip": "Where to stop (seconds). Must be greater than Start.\nOnly applies to the Middle range mode; ignored in other modes."
+      },
+      "截取时长(秒)": {
+        "name": "Duration to take (seconds)",
+        "tooltip": "How much to take (seconds), measured from the beginning of the file, so the start is fixed at 0 s.\nOnly applies to the Head segment mode; ignored in other modes."
+      },
+      "报告语言": {
+        "name": "Report language",
+        "tooltip": "Language of this node's report text.\nWith \"Follow UI language\" the report is Chinese while the ComfyUI interface is Chinese, and English otherwise."
+      }
+    }
+  },
+  "SaveAudioPlatformExport": {
+    "display_name": "Save Audio (Platform Export)",
+    "description": "Export AUDIO to WAV / MP3 / FLAC / OPUS in one run, with a platform compliance report.\n• Sample rate / channels / WAV bit depth / MP3 bitrate / OPUS bitrate set to \"Auto\" follow the source audio parameters\n• Directly connected to \"Load Audio (Advanced)\" for format conversion: when the target format matches the source and all parameters are \"Auto\", the source file is copied as-is (instant, no re-encoding)\n• Multiple target formats can be produced in a single run\n• The player below previews the exported file after the node runs",
+    "inputs": {
+      "音频": {
+        "name": "Audio",
+        "tooltip": "The AUDIO input of any audio output node."
+      },
+      "文件名前缀": {
+        "name": "Filename prefix",
+        "tooltip": "A relative path inside the ComfyUI output directory. Absolute paths are rejected."
+      },
+      "导出WAV": { "name": "Export WAV" },
+      "WAV位深": {
+        "name": "WAV bit depth",
+        "tooltip": "WAV sample bit depth. \"Auto\" follows the source bit depth (16-bit if unknown)."
+      },
+      "导出MP3": { "name": "Export MP3" },
+      "MP3码率": {
+        "name": "MP3 bitrate",
+        "tooltip": "MP3 bitrate. \"Auto\" uses 320 kbps for lossless sources and never exceeds a lossy source's bitrate; \"V0\" is variable-bitrate highest quality."
+      },
+      "导出OPUS": { "name": "Export OPUS" },
+      "OPUS码率": {
+        "name": "OPUS bitrate",
+        "tooltip": "OPUS bitrate. \"Auto\" uses 192 kbps for lossless sources and never exceeds a lossy source's bitrate."
+      },
+      "保留FLAC": { "name": "Keep FLAC" },
+      "采样率": {
+        "name": "Sample rate",
+        "tooltip": "Sample rate. \"Auto\" follows the source sample rate."
+      },
+      "声道": {
+        "name": "Channels",
+        "tooltip": "Channel count. \"Auto\" follows the source channel count."
+      },
+      "平台预设": {
+        "name": "Platform preset",
+        "tooltip": "Fills the fields below with the requirements of the selected platform. \"Custom\" and \"No validation\" leave them to you."
+      },
+      "平台名称": {
+        "name": "Platform name",
+        "tooltip": "Shown in the compliance report. Filled in automatically when a preset is selected."
+      },
+      "合格格式": { "name": "Accepted formats" },
+      "最低采样率": {
+        "name": "Minimum sample rate",
+        "tooltip": "Minimum sample rate required by the platform (Hz)."
+      },
+      "最低位深": {
+        "name": "Minimum bit depth",
+        "tooltip": "Minimum bit depth required by the platform (bit); applies to WAV only."
+      },
+      "最低码率kbps": {
+        "name": "Minimum bitrate (kbps)",
+        "tooltip": "Minimum bitrate required by the platform (kbps); applies to MP3 / OPUS only."
+      },
+      "要求声道": {
+        "name": "Required channels",
+        "tooltip": "Channel count required by the platform."
+      },
+      "文件大小上限MB": {
+        "name": "Max file size (MB)",
+        "tooltip": "Maximum size of a single audio file (MB). Anything larger is treated as non-compliant."
+      },
+      "报告语言": {
+        "name": "Report language",
+        "tooltip": "Language of the compliance report.\nWith \"Follow UI language\" the report is Chinese while the ComfyUI interface is Chinese, and English otherwise."
+      }
+    }
+  },
+  "LoadVideoAdvanced": {
+    "display_name": "Load Video (Advanced)",
+    "description": "Load a video file and output VIDEO.\n• Video file: pick from ComfyUI's `input` directory. To use a local file, drag and drop it into the input directory first; the video is previewed as soon as you pick it, without running the node\n• Supports mp4 / mkv / mov / avi / webm / flv / ts and other mainstream formats\n• Truncation: take a segment from the start, any middle range, or from a point to the end",
+    "inputs": {
+      "视频文件": {
+        "name": "Video file",
+        "tooltip": "Pick a video from the ComfyUI `input` directory, or use the upload button to bring in a file from anywhere on this machine. The player below previews it immediately."
+      },
+      "视频流序号": {
+        "name": "Video stream index",
+        "tooltip": "Which video stream to use for files with multiple streams. 0 means the first one."
+      },
+      "截断方式": {
+        "name": "Truncation mode",
+        "tooltip": "How to cut a long video:\n① Head segment only: from 0 s, take Duration to take seconds\n② Middle range only: from Start to End\n③ From start to the end: use everything from Start to the end of the video\nFor ① fill in Duration to take; for ② fill in Start and End; for ③ fill in Start only."
+      },
+      "起点(秒)": {
+        "name": "Start (seconds)",
+        "tooltip": "Where to start (seconds).\nMiddle range: used together with End.\nFrom start to the end: the starting position; End is ignored."
+      },
+      "终点(秒)": {
+        "name": "End (seconds)",
+        "tooltip": "Where to stop (seconds). Must be greater than Start.\nOnly applies to the Middle range mode; ignored in other modes."
+      },
+      "截取时长(秒)": {
+        "name": "Duration to take (seconds)",
+        "tooltip": "How much to take (seconds), measured from the beginning of the file, so the start is fixed at 0 s.\nOnly applies to the Head segment mode; ignored in other modes."
+      },
+      "报告语言": {
+        "name": "Report language",
+        "tooltip": "Language of this node's report text.\nWith \"Follow UI language\" the report is Chinese while the ComfyUI interface is Chinese, and English otherwise."
+      }
+    }
+  },
+  "SaveVideoConverter": {
+    "display_name": "Save Video (Format Converter)",
+    "description": "Export VIDEO to MP4 / MKV / WEBM / AVI / MOV in one run.\n• Resolution / frame rate / video codec / audio handling set to \"Auto\" follow the source video\n• Directly connected to \"Load Video (Advanced)\" for format conversion: when the target format matches the source and all parameters are \"Auto\", the source file is copied as-is (instant, no re-encoding)\n• Multiple target formats can be produced in a single run; no report is produced, files are simply written to disk\n• The player below previews the exported file after the node runs",
+    "inputs": {
+      "视频": {
+        "name": "Video",
+        "tooltip": "The VIDEO input of any video output node."
+      },
+      "文件名前缀": {
+        "name": "Filename prefix",
+        "tooltip": "A relative path inside the ComfyUI output directory. Absolute paths are rejected."
+      },
+      "导出MP4": { "name": "Export MP4" },
+      "导出MKV": { "name": "Export MKV" },
+      "导出WEBM": { "name": "Export WEBM" },
+      "导出AVI": { "name": "Export AVI" },
+      "导出MOV": { "name": "Export MOV" },
+      "视频编码": {
+        "name": "Video codec",
+        "tooltip": "\"Auto\" reuses the source codec; if that codec is incompatible with the target container it falls back to the container's recommended codec."
+      },
+      "画质CRF": {
+        "name": "Quality CRF",
+        "tooltip": "Constant rate factor. Lower values mean higher quality and larger files; \"Auto\" picks a sensible default per codec."
+      },
+      "分辨率": {
+        "name": "Resolution",
+        "tooltip": "\"Keep original\" uses the source resolution; any other option scales to the listed size proportionally (no distortion, no cropping)."
+      },
+      "帧率": {
+        "name": "Frame rate",
+        "tooltip": "\"Keep original\" uses the source frame rate; any other option outputs the given value."
+      },
+      "音频处理": {
+        "name": "Audio handling",
+        "tooltip": "\"Keep original audio\" does not re-encode; \"Auto\" transcodes when the target container cannot carry the source audio; \"Remove audio\" exports a silent video; any other option forces transcoding to that format."
+      },
+      "音频码率": {
+        "name": "Audio bitrate",
+        "tooltip": "Bitrate used when the audio is re-encoded. \"Auto\" picks a common value for the chosen audio codec."
+      },
+      "报告语言": {
+        "name": "Report language",
+        "tooltip": "Language of the parameter report.\nWith \"Follow UI language\" the report is Chinese while the ComfyUI interface is Chinese, and English otherwise."
+      }
+    }
+  },
+  "VideoReportNode": {
+    "display_name": "Video Report",
+    "description": "Report the parameters of the source video and of every exported file.\n• Reads the real values back from disk with ffprobe-free PyAV probing\n• Shows resolution / frame rate / codecs / duration / size / audio track\n• Works for a converted file as well as for a same-format copy",
+    "inputs": {
+      "视频": {
+        "name": "Video",
+        "tooltip": "The VIDEO input of any video output node."
+      },
+      "报告语言": {
+        "name": "Report language",
+        "tooltip": "Language of the report text.\nWith \"Follow UI language\" the report is Chinese while the ComfyUI interface is Chinese, and English otherwise."
+      }
+    }
+  }
+}

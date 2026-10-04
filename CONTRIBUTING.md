@@ -18,11 +18,13 @@ comfyui_media_toolbox/
 ├── __init__.py          节点注册
 ├── nodes.py             音频节点
 ├── video_nodes.py       视频节点
-├── routes.py            后端 HTTP 路由（文件选择 / 预览 / 列表刷新）
+├── routes.py            后端 HTTP 路由（列表 / 预览 / 语言上报）
 ├── web/
-│   └── media_toolbox.js 前端扩展
+│   └── media_toolbox.js 前端扩展（播放器、上传、刷新、本地化）
 ├── locales/
-│   └── en/main.json     英文语言包（界面默认中文，此包供英文界面使用）
+│   ├── en/main.json     英文（界面默认）
+│   ├── en/nodeDefs.json 英文节点名 / 参数名 / 提示
+│   └── zh/              简体中文翻译（main.json 的 nodeInputOptions 为下拉选项表）
 ├── workflows/           示例工作流
 ├── _smoke_test.py       音频冒烟测试
 ├── _video_test.py       视频冒烟测试
@@ -37,15 +39,24 @@ comfyui_media_toolbox/
 
 ## 代码约定
 
-- **界面文字全部中文**，包括节点名、参数名、下拉选项、提示与报错信息
-- **改动界面文字时必须同步更新 `locales/en/main.json`**，
-  否则英文界面用户会看到半中半英。语言包键名与中文原文一一对应，
-  新增控件后需同时补 `inputs`、`inputTips`、`outputs`、`outputNames`
-- 下拉选项的**显示值即语义**，内部计算前用 `_norm_choice()` / `_norm_truncate()` 归一化
-- 改动已有下拉选项时，**必须保留旧值的映射**，否则用户旧工作流会报错
+- **界面文字以英文为准**，简体中文作为翻译存在 `locales/zh/`。
+  新增或修改界面文字时，**必须同步更新 `locales/zh/nodeDefs.json`**，
+  否则中文界面用户会看到半中半英
+- **下拉选项的值永远是英文**，翻译只发生在显示层。
+  中文映射表放在 `locales/zh/main.json` 的 `nodeInputOptions`，
+  由 `web/media_toolbox.js` 通过官方的 `options.getOptionLabel` 钩子渲染。
+  **绝不要把中文写进 `options.values`**：LiteGraph 会把用户点击的文本直接
+  赋给 `widget.value`，中文会一路泄漏到工作流文件与后端校验，导致
+  `Value not in list` 报错
+- 改动已有下拉选项时，**必须保留旧值的映射**（`_PLATFORM_ALIASES` 等），
+  否则用户旧工作流会报错
 - 音视频的加载 / 保存逻辑尽量保持对称，新增能力时两边一起改
 - 参数名（`save()` 的形参）必须与 `INPUT_TYPES()` 的键**完全一致**，
   ComfyUI 按关键字传参，不一致会在运行时报 `unexpected keyword argument`
+- 前端包装函数一律用闭包捕获 `widget`，不要依赖 `this`：
+  ComfyUI 在某些路径上会脱离调用（解绑时 `this` 为 `undefined`）
+- **所有文件操作限定在 ComfyUI 的 `input` / `output` 目录内**，
+  路径先 `realpath` 再 `commonpath` 校验，不要引入目录外访问
 - 注释解释「为什么」，不复述「做了什么」
 
 ## 提交前自检
@@ -55,7 +66,9 @@ python _smoke_test.py    # 音频节点
 python _video_test.py    # 视频节点
 ```
 
-两个脚本都应输出「全部测试通过」。新增功能时请同步补充对应测试。
+两者都会在结尾打印通过 / 失败统计。新增功能时请同步补充对应测试。
+若改动了 `INPUT_TYPES`，还要确认 `workflows/` 下的示例工作流仍然对齐——
+`widgets_values` 是按位置存储的，控件数量变化会导致整体错位。
 
 ## 提交信息
 

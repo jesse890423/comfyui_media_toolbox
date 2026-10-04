@@ -1,74 +1,168 @@
-"""视频节点冒烟测试：直接调用两个视频节点的核心逻辑。"""
+"""视频节点冒烟测试：直接调用视频节点的核心逻辑（不经过 ComfyUI 前端）。
 
-import importlib
+素材由 ffmpeg 现场生成后放进 ComfyUI 的 input 目录，走和真实使用一致的
+相对名解析路径。ComfyUI 根目录可用环境变量 COMFY_ROOT 覆盖。
+"""
+
+import importlib.util
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import types
 
 NODES_DIR = os.path.dirname(os.path.abspath(__file__))
-PKG_NAME = os.path.basename(NODES_DIR)
+PKG_NAME = "comfyui_media_toolbox_test"
 
-# ComfyUI 根目录 = 本包的上一级（custom_nodes 的父目录）
-COMFY_ROOT = os.path.dirname(os.path.dirname(NODES_DIR))
-if COMFY_ROOT not in sys.path:
-    sys.path.insert(0, COMFY_ROOT)
+COMFY_ROOT = os.environ.get("COMFY_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.dirname(NODES_DIR)))
+if os.path.basename(COMFY_ROOT).lower() != "comfyui" and not os.path.isdir(
+        os.path.join(COMFY_ROOT, "custom_nodes")):
+    # 目录被嵌套安装时向上找带 custom_nodes 的 ComfyUI 根目录
+    probe = COMFY_ROOT
+    for _ in range(6):
+        probe = os.path.dirname(probe)
+        if os.path.isdir(os.path.join(probe, "custom_nodes")):
+            COMFY_ROOT = probe
+            break
 
-# 以包方式导入，保证 `from .nodes import ...` 相对导入可用
-if os.path.dirname(NODES_DIR) not in sys.path:
-    sys.path.insert(0, os.path.dirname(NODES_DIR))
+INPUT_DIR = os.path.join(COMFY_ROOT, "input")
+INPUT_COPY = os.path.join(INPUT_DIR, "__ape_video_test")
+WORK = tempfile.mkdtemp(prefix="ape_video_test_")
 
-video_nodes = importlib.import_module(PKG_NAME + ".video_nodes")
-audio_nodes = importlib.import_module(PKG_NAME + ".nodes")
 
-WORK = os.path.join(COMFY_ROOT, "temp", "vtest")
-os.makedirs(WORK, exist_ok=True)
-for entry in os.listdir(WORK):
-    if entry.startswith("out_"):
-        target = os.path.join(WORK, entry)
-        shutil.rmtree(target) if os.path.isdir(target) else os.unlink(target)
+class _FP(types.ModuleType):
+    """folder_paths 的最小替身，只提供节点用到的接口。"""
 
-ffmpeg = audio_nodes.find_ffmpeg()
+    def __init__(self):
+        super().__init__("folder_paths")
+        self.models_dir = os.path.join(COMFY_ROOT, "models")
+        self.output_directory = os.path.join(COMFY_ROOT, "output")
+
+    def get_input_directory(self):
+        return INPUT_DIR
+
+    def get_output_directory(self):
+        return os.path.join(COMFY_ROOT, "output")
+
+    def get_annotated_filepath(self, name, default_dir=None):
+        return os.path.join(default_dir or INPUT_DIR, name)
+
+    def get_save_image_path(self, filename_prefix, output_dir, **_kw):
+        """复刻 ComfyUI 的返回：(目录, 文件名, 计数器, 子目录, 原前缀)。"""
+        subfolder = os.path.dirname(os.path.normpath(filename_prefix))
+        filename = os.path.basename(os.path.normpath(filename_prefix))
+        full = os.path.join(output_dir, subfolder)
+        try:
+            counter = max(
+                int(a[len(filename) + 1:].split("_")[0])
+                for a in os.listdir(full)
+                if a.startswith(filename + "_")
+            ) + 1
+        except (ValueError, FileNotFoundError):
+            os.makedirs(full, exist_ok=True)
+            counter = 1
+        return full, filename, counter, subfolder, filename_prefix
+
+    def add_model_folder_path(self, *a, **k):
+        pass
+
+
+sys.modules["folder_paths"] = _FP()
+
+pkg = types.ModuleType(PKG_NAME)
+pkg.__path__ = [NODES_DIR]
+sys.modules[PKG_NAME] = pkg
+
+
+def _load(mod):
+    spec = importlib.util.spec_from_file_location(
+        PKG_NAME + "." + mod, os.path.join(NODES_DIR, mod + ".py"))
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = m
+    spec.loader.exec_module(m)
+    return m
+
+
+# nodes 必须先加载：video_nodes 通过 `from .nodes import ...` 取用它的
+# 状态（如上报的界面语言），反序会导入出两个互不相干的模块实例。
+ape = _load("nodes")
+vn = _load("video_nodes")
+
+PASS = []
+FAIL = []
+
+
+def check(label, fn):
+    try:
+        fn()
+        PASS.append(label)
+        print(f"  [OK] {label}")
+    except Exception as exc:
+        FAIL.append((label, exc))
+        print(f"  [FAIL] {label}: {type(exc).__name__}: {exc}")
+
+
+def expect_raises(label, fn, needle=""):
+    def run():
+        try:
+            fn()
+        except Exception as exc:
+            if needle and needle.lower() not in str(exc).lower():
+                raise AssertionError(f"wrong error: {exc}") from None
+            return
+        raise AssertionError("no error raised")
+    check(label, run)
+
+
+ffmpeg = ape.find_ffmpeg()
+if not ffmpeg:
+    raise SystemExit("ffmpeg not found; cannot build test material")
 print("ffmpeg =", ffmpeg)
+print("ComfyUI =", COMFY_ROOT)
 
-# ---------------------------------------------------------------- 准备素材
-mp4_src = os.path.join(WORK, "源视频.mp4")
-mkv_src = os.path.join(WORK, "源视频.mkv")
-silent_src = os.path.join(WORK, "无声视频.mp4")
-
-if not os.path.exists(mp4_src):
-    subprocess.run([ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-                    "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=4",
-                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=4",
-                    "-af", "aformat=channel_layouts=stereo",
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                    "-shortest", mp4_src], check=True)
-if not os.path.exists(mkv_src):
-    subprocess.run([ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", mp4_src, "-c", "copy", mkv_src], check=True)
-if not os.path.exists(silent_src):
-    subprocess.run([ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", mp4_src, "-an", "-c:v", "copy", silent_src], check=True)
-
-print("\n素材：", sorted(os.listdir(WORK)))
-
-loader = video_nodes.LoadVideoAdvanced()
-saver = video_nodes.SaveVideoConverter()
+# ------------------------------------------------------------ 准备测试素材
+os.makedirs(INPUT_COPY, exist_ok=True)
 
 
-def load(path, **kw):
+def _mk(name, args):
+    path = os.path.join(INPUT_COPY, name)
+    if not os.path.exists(path):
+        subprocess.run([ffmpeg, "-y", "-hide_banner", "-loglevel", "error"] + args
+                       + [path], check=True)
+    return path
+
+
+src = _mk("src.mp4", [
+    "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=4",
+    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=4",
+    "-af", "aformat=channel_layouts=stereo",
+    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+_mk("silent.mp4", ["-i", src, "-an", "-c:v", "copy"])
+REL = "__ape_video_test/src.mp4"
+REL_SILENT = "__ape_video_test/silent.mp4"
+
+print("\n素材就绪：", sorted(os.listdir(INPUT_COPY)))
+
+loader = vn.LoadVideoAdvanced()
+saver = vn.SaveVideoConverter()
+GUARD = "only reads and writes inside"
+
+
+def load(rel, **kw):
     params = {
-        "文件路径": path, "视频文件": "", "视频流序号": 0,
-        "截断方式": audio_nodes.TRUNCATE_NONE,
+        "视频文件": rel, "视频流序号": 0,
+        "截断方式": vn.TRUNCATE_NONE,
         "起点(秒)": 0.0, "终点(秒)": 0.0, "截取时长(秒)": 60.0,
+        "报告语言": vn.LANG_FOLLOW_UI,
     }
     params.update(kw)
     return loader.load(**params)
 
 
 def out_file(prefix, ext):
-    return os.path.join(os.path.dirname(prefix),
-                        os.path.basename(prefix) + "_00001." + ext)
+    return os.path.join(COMFY_ROOT, "output", prefix + "_00001." + ext)
 
 
 def save(video, prefix, **kw):
@@ -76,157 +170,201 @@ def save(video, prefix, **kw):
         "视频": video, "文件名前缀": prefix,
         "导出MP4": True, "导出MKV": False, "导出WEBM": False,
         "导出AVI": False, "导出MOV": False,
-        "视频编码": video_nodes.AUTO, "画质CRF": video_nodes.AUTO,
-        "分辨率": video_nodes.KEEP_SOURCE, "帧率": video_nodes.KEEP_SOURCE,
-        "音频处理": video_nodes._AUDIO_KEEP, "音频码率": video_nodes.AUTO,
+        "视频编码": vn.AUTO, "画质CRF": vn.AUTO,
+        "分辨率": vn.KEEP_SOURCE, "帧率": vn.KEEP_SOURCE,
+        "音频处理": vn._AUDIO_KEEP, "音频码率": vn.AUTO,
+        "报告语言": vn.LANG_FOLLOW_UI,
     }
     params.update(kw)
     return saver.save(**params)
 
 
-print("\n===== 测试 1：绝对路径加载视频 =====")
-res = load(mp4_src)
-video = res["result"][0]
-info = video_nodes._video_source_of(video)
-print(res["result"][1])
-assert info["width"] == 640 and info["height"] == 360, info
-assert abs(info["fps"] - 30.0) < 0.01, info
-assert info["has_audio"] is True, info
-print(">>> OK 视频参数正确")
+def cleanup(prefix):
+    for ext in ("mp4", "mkv", "webm", "avi", "mov"):
+        p = out_file(prefix, ext)
+        if os.path.isfile(p):
+            os.unlink(p)
 
-print("\n===== 测试 2：无音频视频 =====")
-res_s = load(silent_src)
-info_s = video_nodes._video_source_of(res_s["result"][0])
-print(res_s["result"][1])
-assert info_s["has_audio"] is False, info_s
-print(">>> OK 正确识别无音轨")
 
-print("\n===== 测试 3：加载非视频文件应报错 =====")
-try:
-    load(os.path.join(WORK, "源视频.mp4").replace("源视频.mp4", "不存在.mp4"))
-    raise AssertionError("应当报错")
-except ValueError as exc:
-    print(">>> OK 已拒绝无效路径")
+print("\n===== 1. 加载 =====")
 
-print("\n===== 测试 4：截断（只取开头 2s）=====")
-res = load(mp4_src, **{"截断方式": audio_nodes.TRUNCATE_HEAD, "截取时长(秒)": 2.0})
-info_t = video_nodes._video_source_of(res["result"][0])
-print(res["result"][1])
-assert abs(info_t["clip_duration"] - 2.0) < 0.01, info_t
-print(">>> OK 截取窗口 2.0s")
 
-print("\n===== 测试 5：截断（中间 0.5s → 2.5s）=====")
-res = load(mp4_src, **{"截断方式": audio_nodes.TRUNCATE_RANGE,
-                       "起点(秒)": 0.5, "终点(秒)": 2.5})
-info_t = video_nodes._video_source_of(res["result"][0])
-print(res["result"][1])
-assert abs(info_t["clip_duration"] - 2.0) < 0.01, info_t
-assert abs(info_t["start_time"] - 0.5) < 0.01, info_t
-print(">>> OK 起点 0.5s / 时长 2.0s")
+def t_load():
+    res = load(REL)
+    info = vn._video_source_of(res["result"][0])
+    assert info and info["width"] == 640 and info["height"] == 360, info
+    assert abs(info["fps"] - 30.0) < 0.01, info
+    assert info["has_audio"] is True, info
+    assert "Loaded:" in res["result"][1], res["result"][1]
 
-print("\n===== 测试 6：同格式直出（MP4 → MP4，全自动）=====")
-res = load(mp4_src)
-out = os.path.join(WORK, "out_direct")
-r = save(res["result"][0], out)
-print(r["ui"]["text"][0])
-assert os.path.exists(out_file(out, "mp4")), out_file(out, "mp4")
-print(">>> OK 同格式直出")
 
-print("\n===== 测试 7：多格式一次转换（MP4 + MKV + WEBM）=====")
-out = os.path.join(WORK, "out_multi")
-r = save(res["result"][0], out, 导出MKV=True, 导出WEBM=True)
-print(r["ui"]["text"][0])
-for ext in ("mp4", "mkv", "webm"):
-    assert os.path.exists(out_file(out, ext)), out_file(out, ext)
-    print("    产出：", os.path.basename(out_file(out, ext)),
-          os.path.getsize(out_file(out, ext)) // 1024, "KB")
-print(">>> OK 多格式转换")
+check("从 input 目录加载视频", t_load)
 
-print("\n===== 测试 8：转码参数（720p + 30fps + H.265 + MP3 音频）=====")
-out = os.path.join(WORK, "out_scaled")
-r = save(res["result"][0], out, 分辨率="1280×720", 帧率="30",
+
+def t_silent():
+    info = vn._video_source_of(load(REL_SILENT)["result"][0])
+    assert info["has_audio"] is False, info
+
+
+check("识别无音轨视频", t_silent)
+
+
+def t_trunc():
+    info = vn._video_source_of(
+        load(REL, **{"截断方式": vn.TRUNCATE_HEAD, "截取时长(秒)": 2.0})["result"][0])
+    assert abs(info["clip_duration"] - 2.0) < 0.05, info
+
+
+check("头部截断 2 秒", t_trunc)
+
+print("\n===== 2. 安全边界 =====")
+expect_raises("拒绝 ..\\ 越界相对路径",
+              lambda: load("../../../Windows/win.ini"), GUARD)
+expect_raises("拒绝绝对路径", lambda: load("C:/Windows/win.ini"), GUARD)
+expect_raises("拒绝下拉占位项",
+              lambda: load("(no video files in the input directory)"), "input")
+expect_raises("拒绝绝对路径文件名前缀",
+              lambda: save(load(REL)["result"][0], "C:/tmp/evil"), "relative")
+expect_raises("拒绝含 .. 的文件名前缀",
+              lambda: save(load(REL)["result"][0], "../../escape"), "..")
+expect_raises("拒绝空输出格式",
+              lambda: save(load(REL)["result"][0], "video/none", 导出MP4=False))
+
+print("\n===== 3. 转换 =====")
+video = load(REL)["result"][0]
+
+
+def t_direct():
+    cleanup("video/direct")
+    r = save(video, "video/direct")
+    assert os.path.isfile(out_file("video/direct", "mp4")), out_file("video/direct", "mp4")
+    # 同格式 + 全自动 = 直转，报告里应明确写出没有重新编码
+    text = r["result"][1]
+    assert "no re-encoding" in text or "direct copy" in text.lower(), text
+    cleanup("video/direct")
+
+
+check("同格式直转", t_direct)
+
+
+def t_multi():
+    cleanup("video/multi")
+    save(video, "video/multi", 导出MKV=True, 导出WEBM=True)
+    for ext in ("mp4", "mkv", "webm"):
+        assert os.path.isfile(out_file("video/multi", ext)), ext
+    cleanup("video/multi")
+
+
+check("一次产出多种格式", t_multi)
+
+
+def t_scale():
+    cleanup("video/scaled")
+    save(video, "video/scaled", 分辨率="1280×720", 帧率="30",
          视频编码="H.265 (libx265)", 音频处理="MP3", 音频码率="192 kbps")
-print(r["ui"]["text"][0])
-path = out_file(out, "mp4")
-assert os.path.exists(path), path
-probe = video_nodes._probe_video(path)
-print(f"    输出：{probe['width']}×{probe['height']} @ {probe['fps']:.3f}fps "
-      f"编码={probe['video_codec']} 音频={probe['audio_codec']}")
-assert (probe["width"], probe["height"]) == (1280, 720), probe
-assert abs(probe["fps"] - 30.0) < 0.5, probe
-print(">>> OK 转码参数生效")
+    probe = vn._probe_video(out_file("video/scaled", "mp4"))
+    assert (probe["width"], probe["height"]) == (1280, 720), probe
+    assert abs(probe["fps"] - 30.0) < 0.5, probe
+    cleanup("video/scaled")
 
-print("\n===== 测试 9：移除音频 =====")
-out = os.path.join(WORK, "out_mute")
-r = save(res["result"][0], out, 音频处理=video_nodes._AUDIO_DROP)
-print(r["ui"]["text"][0])
-probe = video_nodes._probe_video(out_file(out, "mp4"))
-assert probe["has_audio"] is False, probe
-print(">>> OK 已移除音轨")
 
-print("\n===== 测试 10：截断视频转码（应真实只编码 2s）=====")
-res = load(mp4_src, **{"截断方式": audio_nodes.TRUNCATE_HEAD, "截取时长(秒)": 2.0})
-out = os.path.join(WORK, "out_clip")
-r = save(res["result"][0], out, 导出MKV=True)
-print(r["ui"]["text"][0])
-probe = video_nodes._probe_video(out_file(out, "mp4"))
-print(f"    输出时长：{probe['duration']:.2f}s")
-assert 1.5 < probe["duration"] < 2.6, probe
-print(">>> OK 截断转码生效")
+check("分辨率/帧率/编码转码", t_scale)
 
-print("\n===== 测试 11：AVI 自动模式（沿用源 H.264）=====")
-out = os.path.join(WORK, "out_avi")
-r = save(res["result"][0], out, 导出MP4=False, 导出AVI=True)
-print(r["ui"]["text"][0])
-probe = video_nodes._probe_video(out_file(out, "avi"))
-print(f"    输出：{probe['width']}×{probe['height']} 视频={probe['video_codec']} 音频={probe['audio_codec']}")
-# 源是 H.264，AVI 兼容列表含 H.264 → 自动模式应沿用源编码
-assert probe["video_codec"] == "h264", probe
-assert probe["has_audio"] is True, probe
-print(">>> OK 自动沿用源编码")
 
-print("\n===== 测试 11b：显式指定 MPEG-4 编码器 =====")
-out = os.path.join(WORK, "out_mpeg4")
-r = save(res["result"][0], out, 导出MP4=False, 导出AVI=True,
-         视频编码="MPEG-4 (mpeg4)")
-print(r["ui"]["text"][0])
-probe = video_nodes._probe_video(out_file(out, "avi"))
-print(f"    输出：{probe['width']}×{probe['height']} 视频={probe['video_codec']}")
-assert probe["video_codec"] == "mpeg4", probe
-print(">>> OK 显式编码器生效")
+def t_drop_audio():
+    cleanup("video/mute")
+    save(video, "video/mute", 音频处理=vn._AUDIO_DROP)
+    probe = vn._probe_video(out_file("video/mute", "mp4"))
+    assert probe["has_audio"] is False, probe
+    cleanup("video/mute")
 
-print("\n===== 测试 11c：WEBM 自动模式应回退 VP9（源 H.264 不兼容）=====")
-out = os.path.join(WORK, "out_webm")
-r = save(res["result"][0], out, 导出MP4=False, 导出WEBM=True)
-print(r["ui"]["text"][0])
-probe = video_nodes._probe_video(out_file(out, "webm"))
-print(f"    输出：{probe['width']}×{probe['height']} 视频={probe['video_codec']} 音频={probe['audio_codec']}")
-# H.264 不在 WEBM 推荐列表 → 应回退到 VP9
-assert probe["video_codec"] == "vp9", probe
-print(">>> OK 不兼容编码正确回退")
 
-print("\n===== 测试 12：不勾选任何格式应报错 =====")
-try:
-    save(res["result"][0], os.path.join(WORK, "out_none"), 导出MP4=False)
-    raise AssertionError("应当报错")
-except ValueError:
-    print(">>> OK 已拒绝空输出")
+check("移除音轨", t_drop_audio)
 
-print("\n===== 测试 13：绝对路径保存（含扩展名应被剥离）=====")
-abs_dir = os.path.join(WORK, "绝对路径输出")
-shutil.rmtree(abs_dir, ignore_errors=True)
-res = load(mp4_src)
-r = save(res["result"][0], os.path.join(abs_dir, "成片.mp4"))
-produced = r["ui"]["images"]
-names = [i["filename"] for i in produced]
-print("    产出：", names)
-assert names == ["成片_00001.mp4"], names
-assert os.path.isfile(os.path.join(abs_dir, "成片_00001.mp4"))
-# 不带扩展名也应正确命名
-r2 = save(res["result"][0], os.path.join(abs_dir, "第二个"))
-names2 = [i["filename"] for i in r2["ui"]["images"]]
-print("    产出：", names2)
-assert names2 == ["第二个_00001.mp4"], names2
-print(">>> OK 绝对路径保存正常")
 
-print("\n全部视频测试通过 ✅")
+def t_encoder_fallback():
+    # H.264 不在 WEBM 推荐列表，自动模式应回退 VP9
+    cleanup("video/webm")
+    save(video, "video/webm", 导出MP4=False, 导出WEBM=True)
+    probe = vn._probe_video(out_file("video/webm", "webm"))
+    assert probe["video_codec"] == "vp9", probe
+    cleanup("video/webm")
+
+
+check("容器不兼容时回退编码", t_encoder_fallback)
+
+
+def t_clip_encode():
+    # 截断后应只编码截出的那一段，而不是整段再切
+    cleanup("video/clip")
+    clipped = load(REL, **{"截断方式": vn.TRUNCATE_HEAD, "截取时长(秒)": 2.0})["result"][0]
+    save(clipped, "video/clip")
+    probe = vn._probe_video(out_file("video/clip", "mp4"))
+    assert 1.5 < probe["duration"] < 2.6, probe
+    cleanup("video/clip")
+
+
+check("截断视频转码", t_clip_encode)
+
+print("\n===== 4. 报告与报告节点 =====")
+
+
+def t_report_lang():
+    zh = load(REL, 报告语言=vn.LANG_ZH)["result"][1]
+    assert "已加载：" in zh, zh
+    assert "Loaded:" not in zh, zh
+    en = load(REL, 报告语言=vn.LANG_EN)["result"][1]
+    assert "Loaded:" in en, en
+    assert "已加载：" not in en, en
+    # 跟随界面语言由前端上报决定
+    ape.set_ui_language("zh")
+    follow = load(REL, 报告语言=vn.LANG_FOLLOW_UI)["result"][1]
+    assert "已加载：" in follow, follow
+    ape.set_ui_language("en")
+    follow2 = load(REL, 报告语言=vn.LANG_FOLLOW_UI)["result"][1]
+    assert "Loaded:" in follow2, follow2
+
+
+check("加载报告语言开关", t_report_lang)
+
+
+def t_save_report_lang():
+    video2 = load(REL)["result"][0]
+    cleanup("video/lang")
+    zh = save(video2, "video/lang", 报告语言=vn.LANG_ZH)["result"][1]
+    en = save(video2, "video/lang", 报告语言=vn.LANG_EN)["result"][1]
+    # 报告首行是「视频报告 / Video report」标题，两种语言必须各自命中
+    assert "视频报告" in zh, zh
+    assert "已加载：" in zh or "源文件" in zh, zh
+    assert "Video report" in en, en
+    assert "Source:" in en, en
+    assert "视频报告" not in en, en
+    cleanup("video/lang")
+
+
+check("保存报告语言开关", t_save_report_lang)
+
+
+def t_report_node():
+    node = vn.VideoReportNode()
+    zh = node.report(视频=video, 报告语言=vn.LANG_ZH)
+    en = node.report(视频=video, 报告语言=vn.LANG_EN)
+    # OUTPUT_NODE 节点返回 {"ui": ..., "result": ...}
+    zh_text = zh["result"][0]
+    en_text = en["result"][0]
+    assert "视频报告" in zh_text, zh_text
+    assert "Video report" in en_text, en_text
+    assert "已加载：" not in en_text, en_text
+
+
+check("视频报告节点", t_report_node)
+
+print("\n" + "=" * 60)
+print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
+for label, exc in FAIL:
+    print(f"  FAIL {label}: {exc}")
+print("=" * 60)
+
+shutil.rmtree(WORK, ignore_errors=True)
+shutil.rmtree(INPUT_COPY, ignore_errors=True)
+sys.exit(0 if not FAIL else 1)

@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-media-toolbox"
 version = "1.0.0"
-description = "音频 / 视频加载与格式转换的 ComfyUI 自定义节点，全中文界面，支持绝对路径加载、一次多格式转换与长媒体截断"
+description = "Audio and video loading / format conversion nodes for ComfyUI. Exports multiple formats in one run, supports long-media truncation, zero-re-encoding passthrough, and platform compliance checks. Reads and writes only inside the ComfyUI input/output directories."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -26,5 +26,5 @@ Issues = "https://github.com/jesse890423/comfyui_media_toolbox/issues"
 
 [tool.comfy]
 PublisherId = "jesse890423"
-DisplayName = "音视频工具箱"
+DisplayName = "Media Toolbox"
 Icon = ""

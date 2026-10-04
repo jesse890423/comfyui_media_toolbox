@@ -23,6 +23,10 @@ import subprocess
 import folder_paths
 
 from .nodes import (
+    LANG_CHOICES,
+    LANG_EN,
+    LANG_FOLLOW_UI,
+    LANG_ZH,
     TRUNCATE_CHOICES,
     TRUNCATE_NONE,
     TRUNCATE_HEAD,
@@ -30,6 +34,9 @@ from .nodes import (
     TRUNCATE_TAIL,
     _norm_truncate,
     _resolve_destination,
+    _resolve_report_lang,
+    _resolve_within_roots,
+    _tr,
     _unique_copy,
     _url_quote,
     find_ffmpeg,
@@ -46,8 +53,8 @@ except Exception:  # pragma: no cover - 运行环境缺少 PyAV 时给出友好�
 # 常量
 # ---------------------------------------------------------------------------
 
-AUTO = "自动（跟随源）"
-KEEP_SOURCE = "保持原始"
+AUTO = "Auto (follow source)"
+KEEP_SOURCE = "Keep original"
 
 # 视频扩展名（用于「视频文件」下拉）
 VIDEO_EXTS = (
@@ -97,8 +104,8 @@ _ENCODER_TUNING = {
 _CRF_ENCODERS = set(_ENCODER_TUNING)
 
 # 音频处理方式
-_AUDIO_KEEP = "保留原音频（不重新编码）"
-_AUDIO_DROP = "移除音频（导出无声视频）"
+_AUDIO_KEEP = "Keep original audio (no re-encoding)"
+_AUDIO_DROP = "Remove audio (export silent video)"
 _AUDIO_CHOICES = [
     _AUDIO_KEEP,
     AUTO,
@@ -129,6 +136,9 @@ _CONTAINER_AUDIO = {
 # 源视频信息挂载在 VIDEO 对象上的属性名
 _VIDEO_SOURCE_ATTR = "_video_source"
 
+# 记录保存节点实际写出的文件，供 VideoReportNode 读取
+_PRODUCED_ATTR = "_video_produced"
+
 # OPUS 支持的采样率
 _OPUS_RATES = (8000, 12000, 16000, 24000, 48000)
 
@@ -147,17 +157,31 @@ _CODEC_TO_ENCODER = {
 # 工具函数
 # ---------------------------------------------------------------------------
 
+def _preview_hint(filename, type_="output", subfolder=""):
+    """将预览目标编码为前端可识别的惰性文本行。
+
+    Web 扩展从 ``text`` 列表中读取该行并转换为 ``/view`` URL。使用
+    ``text`` 而不是 ``images``，可避免 ComfyUI 在插件播放器旁额外创建
+    自己的画布媒体预览。
+    """
+    return f"__preview__|{type_}|{subfolder}|{filename}"
+
+
 def list_input_video():
-    """列出 ComfyUI input 目录下的视频文件。"""
+    """列出 ComfyUI input 目录下的视频文件（含子目录，理由同 list_input_media）。"""
     input_dir = folder_paths.get_input_directory()
     os.makedirs(input_dir, exist_ok=True)
     result = []
-    for name in os.listdir(input_dir):
-        if not os.path.isfile(os.path.join(input_dir, name)):
-            continue
-        ext = os.path.splitext(name)[1].lower().lstrip(".")
-        if ext in VIDEO_EXTS:
-            result.append(name)
+    for base, _dirs, names in os.walk(input_dir):
+        for name in names:
+            full = os.path.join(base, name)
+            if not os.path.isfile(full):
+                continue
+            ext = os.path.splitext(name)[1].lower().lstrip(".")
+            if ext not in VIDEO_EXTS:
+                continue
+            rel = os.path.relpath(full, input_dir).replace("\\", "/")
+            result.append(rel)
     return sorted(result)
 
 
@@ -170,7 +194,7 @@ def _choice_int(value, default):
 
 def _fmt_duration(seconds):
     if seconds is None:
-        return "未知"
+        return "unknown"
     seconds = float(seconds)
     minutes, secs = divmod(seconds, 60)
     hours, minutes = divmod(int(minutes), 60)
@@ -181,7 +205,7 @@ def _fmt_duration(seconds):
 
 def _fmt_fps(fps):
     if not fps:
-        return "未知"
+        return "unknown"
     text = f"{float(fps):.3f}".rstrip("0").rstrip(".")
     return text + " fps"
 
@@ -191,7 +215,7 @@ def _container_display(ext):
     ext = (ext or "").lower()
     mapping = {"mp4": "MP4", "m4v": "MP4", "mkv": "MKV", "webm": "WEBM",
                "avi": "AVI", "mov": "MOV"}
-    return mapping.get(ext, ext.upper() or "未知")
+    return mapping.get(ext, ext.upper() or "unknown")
 
 
 def _encoder_display(encoder):
@@ -199,7 +223,7 @@ def _encoder_display(encoder):
     for display, name in _ENCODERS.items():
         if name == encoder:
             return display
-    return encoder or "未知"
+    return encoder or "unknown"
 
 
 def _to_encoder_name(codec):
@@ -210,12 +234,12 @@ def _to_encoder_name(codec):
 def _probe_video(path, stream_index=0):
     """读取视频流参数（宽高、帧率、编码、时长、是否含音轨）。"""
     if av is None:
-        raise RuntimeError("运行环境缺少 PyAV（av），无法处理视频文件。")
+        raise RuntimeError("PyAV (av) is not available in this environment, so video files cannot be processed.")
 
     with av.open(path) as container:
         streams = list(container.streams.video)
         if not streams:
-            raise ValueError("该文件不包含视频流，无法作为视频加载。")
+            raise ValueError("This file contains no video stream and cannot be loaded as a video.")
         if stream_index >= len(streams):
             stream_index = 0
 
@@ -283,6 +307,15 @@ def _file_source_of(video):
     return None
 
 
+def _source_path_of(video):
+    """报告用的源文件路径：优先取节点自己记录的，回退到 VIDEO 自身的流来源。"""
+    info = _video_source_of(video)
+    recorded = info.get("path") if isinstance(info, dict) else None
+    if recorded and os.path.isfile(recorded):
+        return recorded
+    return _file_source_of(video)
+
+
 def _buffer_of(video):
     """若 VIDEO 由内存缓冲构造，返回可读的 BytesIO。"""
     for attr in ("_comfyui_owned_video_buffer", "__buffer", "_buffer"):
@@ -303,62 +336,75 @@ def _buffer_of(video):
 class LoadVideoAdvanced:
     """加载本地视频文件（绝对路径 / input 下拉 / 长视频截断）。"""
 
-    CATEGORY = "视频"
+    CATEGORY = "Video"
     FUNCTION = "load"
     RETURN_TYPES = ("VIDEO", "STRING")
-    RETURN_NAMES = ("视频", "信息")
+    RETURN_NAMES = ("video", "info")
     DESCRIPTION = (
-        "加载视频文件并输出 VIDEO。\n"
-        "· 文件路径：填本地任意绝对路径（优先级最高），不会复制任何副本\n"
-        "· 视频文件：从 ComfyUI 的 input 目录下拉选择（与官方 Load Video 一致）\n"
-        "· 支持 mp4 / mkv / mov / avi / webm / flv / ts 等主流格式\n"
-        "· 长视频截断：从开头取一段、取中间任意区间、或从某一点一直到结尾"
+        "Load a video file and output VIDEO.\n"
+        "• Video file: pick from the ComfyUI `input` directory (same as official Load Video).\n"
+        "  To use a local file, drag and drop it into the input directory first.\n"
+        "• Supports mp4 / mkv / mov / avi / webm / flv / ts and other mainstream formats\n"
+        "• Truncation: take a segment from the start, any middle range, or from a point to the end"
     )
 
     @classmethod
     def INPUT_TYPES(cls):
         files = list_input_video()
         if not files:
-            files = ["(input 目录暂无视频文件)"]
+            files = ["(no video files in the input directory)"]
 
         return {
             "required": {
-                "文件路径": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "tooltip": "本地任意绝对路径。填写后优先使用，且不会复制任何副本。",
-                }),
+                # The upload button is added by this plugin's frontend extension
+                # (web/media_toolbox.js). ComfyUI's own "video_upload" marker is
+                # deliberately not used: it routes through Comfy.UploadImage,
+                # which builds its own upload button and turns on a canvas
+                # preview inside the node, which would appear as a second player
+                # next to the player this plugin already adds.
+                # ComfyUI stores the uploaded file in the input directory and
+                # returns a relative name, resolved against the input directory below.
                 "视频文件": (files, {
-                    "tooltip": "从 ComfyUI 的 input 目录选择视频（当「文件路径」为空时生效）。",
+                    "media_toolbox_upload": "video",
+                    "tooltip": "Pick a video from the ComfyUI `input` directory, or use the upload "
+                               "button to bring in a file from anywhere on this machine. "
+                               "The video is previewed as soon as you pick it, without running the node.",
                 }),
                 "视频流序号": ("INT", {
                     "default": 0, "min": 0, "max": 16, "step": 1,
-                    "tooltip": "文件含多条视频流时使用哪一条，0 表示第一条。",
+                    "tooltip": "Which video stream to use for files with multiple streams. 0 means the first one.",
                 }),
                 "截断方式": (TRUNCATE_CHOICES, {
                     "default": TRUNCATE_NONE,
-                    "tooltip": "长视频只取一部分时使用：\n"
-                               "① 只取开头一段：0 秒开始，取「截取时长」秒\n"
-                               "② 只取中间一段：从「起点」到「终点」\n"
-                               "③ 从起点一直到结尾：从「起点」一直用到视频结束\n"
-                               "选第①种时只填「截取时长」；选第②种时填「起点」和「终点」；"
-                               "选第③种时只填「起点」。",
+                    "tooltip": "How to cut a long video:\n"
+                               "① Head segment only: from 0 s, take Duration to take seconds\n"
+                               "② Middle range only: from Start to End\n"
+                               "③ From start to the end: use everything from Start to the end of the video\n"
+                               "For ① fill in Duration to take; for ② fill in Start and End; "
+                               "for ③ fill in Start only.",
                 }),
                 "起点(秒)": ("FLOAT", {
                     "default": 0.0, "min": 0.0, "max": 1000000.0, "step": 0.01,
-                    "tooltip": "从哪里开始（秒）。\n"
-                               "只取中间一段：与「终点」配合使用。\n"
-                               "从起点一直到结尾：作为开始位置，忽略「终点」。",
+                    "tooltip": "Where to start (seconds).\n"
+                               "Middle range: used together with End.\n"
+                               "From start to the end: the starting position; End is ignored.",
                 }),
                 "终点(秒)": ("FLOAT", {
                     "default": 0.0, "min": 0.0, "max": 1000000.0, "step": 0.01,
-                    "tooltip": "到哪里结束（秒），必须大于「起点」。\n"
-                               "只在「只取中间一段」模式下生效，其余模式忽略。",
+                    "tooltip": "Where to stop (seconds). Must be greater than Start.\n"
+                               "Only applies to the Middle range mode; ignored in other modes.",
                 }),
                 "截取时长(秒)": ("FLOAT", {
                     "default": 60.0, "min": 0.0, "max": 1000000.0, "step": 0.01,
-                    "tooltip": "要取多长（秒）。从视频开头算起，所以起点固定是 0 秒。\n"
-                               "只在「只取开头一段」模式下生效，其余模式忽略。",
+                    "tooltip": "How much to take (seconds), measured from the beginning of the file, "
+                               "so the start is fixed at 0 s.\n"
+                               "Only applies to the Head segment mode; ignored in other modes.",
+                }),
+                "报告语言": (LANG_CHOICES, {
+                    "default": LANG_FOLLOW_UI,
+                    "tooltip": "Language of this node's report text. "
+                               "\"Follow UI language\" produces a Chinese report while the "
+                               "ComfyUI interface is Chinese, and an English report otherwise.",
                 }),
             }
         }
@@ -366,7 +412,7 @@ class LoadVideoAdvanced:
     def load(self, **kwargs):
         from comfy_api import input_impl as input_impl
 
-        raw_path = str(kwargs.get("文件路径", "") or "").strip().strip('"').strip("'")
+        lang = _resolve_report_lang(kwargs.get("报告语言", LANG_FOLLOW_UI))
         combo = str(kwargs.get("视频文件", "") or "").strip()
         stream_index = int(kwargs.get("视频流序号", 0) or 0)
         mode = _norm_truncate(kwargs.get("截断方式", TRUNCATE_NONE))
@@ -374,20 +420,21 @@ class LoadVideoAdvanced:
         end = float(kwargs.get("终点(秒)", 0.0) or 0.0)
         duration = float(kwargs.get("截取时长(秒)", 0.0) or 0.0)
 
-        from_abs = bool(raw_path)
-        if raw_path:
-            path = os.path.expandvars(os.path.expanduser(raw_path))
-            if not os.path.isabs(path):
-                path = os.path.join(folder_paths.get_input_directory(), path)
-        elif combo and not combo.startswith("("):
+        if combo and not combo.startswith("("):
             path = folder_paths.get_annotated_filepath(combo)
+            path = _resolve_within_roots(path, label="video file")
         else:
-            raise ValueError("请填写「文件路径」（本地绝对路径），或在「视频文件」中选择一个文件。")
+            raise ValueError(
+                "Please pick a file from the ComfyUI input directory in 'Video file'."
+            )
 
         if not os.path.isfile(path):
-            raise ValueError(f"找不到文件：{path}")
+            raise ValueError(f"File not found: {path}")
         if not _has_video_stream(path):
-            raise ValueError("该文件不含视频流。若只想处理音频，请改用「加载音频(增强)」节点。")
+            raise ValueError(
+                "This file has no video stream. To process audio only, "
+                "use the 'Load Audio (Advanced)' node instead."
+            )
 
         info = _probe_video(path, stream_index)
         total = info.get("duration") or 0.0
@@ -401,15 +448,15 @@ class LoadVideoAdvanced:
         elif mode == TRUNCATE_TAIL:
             begin, finish = float(start), None
         elif mode != TRUNCATE_NONE:
-            raise ValueError("未知的「截断方式」：" + str(mode) + "。请在下拉框中重新选择一项。")
+            raise ValueError("Unknown truncation mode: " + str(mode) + ". Please pick one from the dropdown again.")
 
         if finish is not None and finish <= begin:
             raise ValueError(
-                f"「终点」必须大于「起点」：当前起点 {begin:.2f}s、终点 {finish:.2f}s。"
+                f"End must be greater than Start: current start {begin:.2f}s, end {finish:.2f}s."
             )
         if total and begin >= total:
             raise ValueError(
-                f"「起点」{begin:.2f}s 已超出视频总时长 {total:.2f}s，请调小起点。"
+                f"Start {begin:.2f}s is beyond the total video duration of {total:.2f}s; reduce Start."
             )
 
         clip_duration = (finish - begin) if finish is not None else None
@@ -423,39 +470,43 @@ class LoadVideoAdvanced:
                                          duration=clip_duration or 0)
         setattr(video, _VIDEO_SOURCE_ATTR, info)
 
-        lines = [f"已加载：{os.path.basename(path)}"]
-        lines.append("来源：" + ("本地绝对路径（未复制副本）" if from_abs else "ComfyUI input 目录"))
-        lines.append(f"路径：{path}")
-        lines.append(f"分辨率：{info['width']}×{info['height']}    帧率：{_fmt_fps(info.get('fps'))}")
-        lines.append(f"视频编码：{_encoder_display(_to_encoder_name(info.get('video_codec')))}")
+        lines = [_tr("loaded", lang, name=os.path.basename(path))]
+        lines.append(_tr("source_dir", lang))
+        lines.append(_tr("path", lang, path=path))
+        lines.append(_tr("res_fps", lang, w=info["width"], h=info["height"],
+                         fps=_fmt_fps(info.get("fps"))))
+        lines.append(_tr("v_codec", lang,
+                         v=_encoder_display(_to_encoder_name(info.get("video_codec")))))
         if info.get("has_audio"):
-            lines.append(
-                f"音频轨：有（{info.get('audio_codec')} / {info.get('audio_rate')} Hz / "
-                f"{info.get('audio_channels')} 声道）"
-            )
+            lines.append(_tr("audio_yes", lang, codec=info.get("audio_codec"),
+                                            rate=info.get("audio_rate"),
+                                            ch=info.get("audio_channels")))
         else:
-            lines.append("音频轨：无")
+            lines.append(f"{_tr('audio_track', lang)}: {_tr('no_audio_track', lang)}")
         if info.get("video_streams", 1) > 1:
-            lines.append(f"视频流：第 {info.get('stream_index', 0) + 1} 条 / 共 {info['video_streams']} 条")
+            lines.append(_tr("v_streams", lang, used=info.get("stream_index", 0) + 1,
+                                           n=info["video_streams"]))
         if total:
-            lines.append(f"原始时长：{_fmt_duration(total)}")
+            lines.append(_tr("original_duration", lang, dur=_fmt_duration(total)))
         if mode != TRUNCATE_NONE:
-            end_text = f"{finish:.2f}s" if finish is not None else "结尾"
-            lines.append(f"截取：{begin:.2f}s ~ {end_text}（方式：{mode}）")
-        lines.append(
-            f"输出：{_fmt_duration(info['output_duration'])} / "
-            f"{info['width']}×{info['height']} / {_fmt_fps(info.get('fps'))}"
-        )
+            if finish is not None:
+                lines.append(_tr("truncated", lang, start=f"{begin:.2f}",
+                                               end=f"{finish:.2f}",
+                                               dur=f"{finish - begin:.2f}", mode=mode))
+            else:
+                lines.append(_tr("trunc_to_end", lang, start=f"{begin:.2f}", mode=mode))
+        lines.append(_tr("v_output", lang, dur=_fmt_duration(info["output_duration"]),
+                                         w=info["width"], h=info["height"],
+                                         fps=_fmt_fps(info.get("fps"))))
         report = "\n".join(lines)
-        print("[加载视频] " + report.replace("\n", "\n[加载视频] "))
+        print("[Load Video] " + report.replace("\n", "\n[Load Video] "))
 
+        # Deliberately no "images" key: returning it makes ComfyUI render its own
+        # canvas media preview, which would sit next to the player this plugin
+        # adds and show up as a second grey bar. "text" is inert for the frontend
+        # and is consumed by our own onExecuted hook instead.
         return {
-            "ui": {
-                "text": [report],
-                "images": [{"url": "/audio_platform_export/view?path=" + _url_quote(path),
-                            "filename": os.path.basename(path), "type": "input"}],
-                "animated": (True,),
-            },
+            "ui": {"text": [report, _preview_hint(os.path.basename(path), "input")]},
             "result": (video, report),
         }
 
@@ -467,17 +518,19 @@ class LoadVideoAdvanced:
 class SaveVideoConverter:
     """一次产出 MP4 / MKV / WEBM / AVI / MOV 多种格式，参数可自动适配源视频。"""
 
-    CATEGORY = "视频"
+    CATEGORY = "Video"
     FUNCTION = "save"
-    RETURN_TYPES = ("VIDEO",)
-    RETURN_NAMES = ("视频",)
+    RETURN_TYPES = ("VIDEO", "STRING")
+    RETURN_NAMES = ("video", "summary")
     OUTPUT_NODE = True
     DESCRIPTION = (
-        "把 VIDEO 一次导出为 MP4 / MKV / WEBM / AVI / MOV 多种格式。\n"
-        "· 分辨率 / 帧率 / 视频编码 / 音频处理 选「自动」时，跟随源视频参数\n"
-        "· 与「加载视频(增强)」直连做格式转换：目标格式与源格式一致且参数为「自动」时，"
-        "直接复制源文件，0 秒完成、不重新编码\n"
-        "· 支持一次勾选多个目标格式；不输出报告，仅落盘文件"
+        "Export VIDEO to MP4 / MKV / WEBM / AVI / MOV in one run.\n"
+        "• Resolution / frame rate / video codec / audio handling set to \"Auto\" follow the source video\n"
+        "• Directly connected to \"Load Video (Advanced)\" for format conversion: when the target format "
+        "matches the source and all parameters are \"Auto\", the source file is copied as-is "
+        "(instant, no re-encoding)\n"
+        "• Multiple target formats can be produced in a single run; no report is produced, "
+        "files are simply written to disk"
     )
 
     def __init__(self):
@@ -487,10 +540,11 @@ class SaveVideoConverter:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "视频": ("VIDEO", {"tooltip": "任意视频输出节点的 VIDEO 输入。"}),
+                "视频": ("VIDEO", {"tooltip": "The VIDEO input of any video output node."}),
                 "文件名前缀": ("STRING", {
                     "default": "video/ComfyUI",
-                    "tooltip": "相对路径存到 ComfyUI output 目录；也可填绝对路径存到本地任意目录。",
+                    "tooltip": "A relative path inside the ComfyUI output directory. "
+                               "Absolute paths are rejected.",
                 }),
                 "导出MP4": ("BOOLEAN", {"default": True}),
                 "导出MKV": ("BOOLEAN", {"default": False}),
@@ -499,46 +553,59 @@ class SaveVideoConverter:
                 "导出MOV": ("BOOLEAN", {"default": False}),
                 "视频编码": ([AUTO] + list(_ENCODERS.keys()), {
                     "default": AUTO,
-                    "tooltip": "「自动」时沿用源视频编码；若该编码与目标容器不兼容，"
-                               "自动回退到容器推荐编码器。",
+                    "tooltip": "\"Auto\" reuses the source codec; if that codec is incompatible with the "
+                               "target container it falls back to the container's recommended codec.",
                 }),
-                "画质CRF": ([AUTO, "16（极高）", "20（高）", "23（标准）", "26（较小）"], {
+                "画质CRF": ([AUTO, "16 (very high)", "20 (high)", "23 (standard)", "26 (smaller)"], {
                     "default": AUTO,
-                    "tooltip": "恒定质量。数值越小越清晰、体积越大；「自动」按编码器取默认值。",
+                    "tooltip": "Constant rate factor. Lower values mean higher quality and larger files; "
+                               "\"Auto\" picks a sensible default per codec.",
                 }),
                 "分辨率": ([KEEP_SOURCE, "1920×1080", "1280×720", "854×480", "640×360"], {
                     "default": KEEP_SOURCE,
-                    "tooltip": "「保持原始」= 源分辨率；其余按标注尺寸等比缩放（不会变形、不会裁切）。",
+                    "tooltip": "\"Keep original\" uses the source resolution; any other option scales to the "
+                               "listed size proportionally (no distortion, no cropping).",
                 }),
                 "帧率": ([KEEP_SOURCE, "60", "30", "25", "24", "15"], {
                     "default": KEEP_SOURCE,
-                    "tooltip": "「保持原始」= 源帧率；其余按数值输出。",
+                    "tooltip": "\"Keep original\" uses the source frame rate; any other option outputs "
+                               "the given value.",
                 }),
                 "音频处理": (_AUDIO_CHOICES, {
                     "default": _AUDIO_KEEP,
-                    "tooltip": "「保留原音频」= 不重新编码；「自动」= 目标容器不兼容时自动转码；"
-                               "「移除音频」= 导出无声视频；其余为强制转码为指定格式。",
+                    "tooltip": "\"Keep original audio\" does not re-encode; \"Auto\" transcodes when the target "
+                               "container cannot carry the source audio; \"Remove audio\" exports a silent "
+                               "video; any other option forces transcoding to that format.",
                 }),
                 "音频码率": ([AUTO, "128 kbps", "192 kbps", "256 kbps", "320 kbps"], {
                     "default": AUTO,
-                    "tooltip": "音频转码码率。「自动」时按音频编码取常用值。",
+                    "tooltip": "Bitrate used when the audio is re-encoded. \"Auto\" picks a common value for "
+                               "the chosen audio codec.",
+                }),
+                "报告语言": (LANG_CHOICES, {
+                    "default": LANG_FOLLOW_UI,
+                    "tooltip": "Language of the parameter report. "
+                               "\"Follow UI language\" produces a Chinese report while the "
+                               "ComfyUI interface is Chinese, and an English report otherwise.",
                 }),
             }
         }
 
     def save(self, 视频, 文件名前缀, 导出MP4, 导出MKV, 导出WEBM, 导出AVI, 导出MOV,
-             视频编码, 画质CRF, 分辨率, 帧率, 音频处理, 音频码率):
+             视频编码, 画质CRF, 分辨率, 帧率, 音频处理, 音频码率, 报告语言=LANG_FOLLOW_UI):
         ffmpeg = find_ffmpeg()
         if 视频 is None:
-            raise ValueError("视频 输入为空（上游节点没有视频输出）")
+            raise ValueError("The Video input is empty (the upstream node produced no video).")
         if not ffmpeg:
             raise RuntimeError(_FFMPEG_HINT)
+
+        lang = _resolve_report_lang(报告语言)
 
         targets = [name for flag, name in ((导出MP4, "MP4"), (导出MKV, "MKV"),
                                            (导出WEBM, "WEBM"), (导出AVI, "AVI"),
                                            (导出MOV, "MOV")) if flag]
         if not targets:
-            raise ValueError("至少要勾选一种输出格式（MP4 / MKV / WEBM / AVI / MOV）")
+            raise ValueError("Select at least one output format (MP4 / MKV / WEBM / AVI / MOV).")
 
         # ---- 归一化全部下拉参数 ----
         want_encoder = AUTO if 视频编码 == AUTO else 视频编码
@@ -558,7 +625,7 @@ class SaveVideoConverter:
         source_path = source_info.get("path") if source_info else None
         source_container = _container_display(source_info.get("ext")) if source_info else None
 
-        folder, name, counter, subfolder, inside_output = _resolve_destination(
+        folder, name, counter, subfolder = _resolve_destination(
             文件名前缀, self.output_dir,
             default_name="video/ComfyUI",
             media_exts=tuple(_CONTAINERS[k][1] for k in _CONTAINERS))
@@ -584,7 +651,7 @@ class SaveVideoConverter:
             for kind in targets:
                 ext = _CONTAINERS[kind][1]
                 produced.append((kind, _unique_copy(source_path, folder, base, ext), True))
-            return self._result(视频, produced, folder)
+            return self._result(self._tag_produced(视频, produced), produced, folder, subfolder, lang)
 
         # ---- 需要 ffmpeg 转码 ----
         source = _file_source_of(视频)
@@ -599,8 +666,8 @@ class SaveVideoConverter:
                     stdin_buffer = fallback
                 except Exception as exc:
                     raise RuntimeError(
-                        "上游视频不是文件型输入，无法直接转码。"
-                        "请把「加载视频(增强)」作为上游节点。\n" + str(exc)
+                        "The upstream video is not a file-backed input and cannot be converted directly. "
+            "Please use 'Load Video (Advanced)' as the upstream node.\n" + str(exc)
                     ) from exc
             source = "pipe:0"
 
@@ -662,11 +729,11 @@ class SaveVideoConverter:
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode != 0:
             raise RuntimeError(
-                "ffmpeg 视频转换失败：\n"
+                "ffmpeg video conversion failed:\n"
                 + result.stderr.decode("utf-8", "ignore")[-1500:]
             )
 
-        return self._result(视频, produced, folder)
+        return self._result(self._tag_produced(视频, produced), produced, folder, subfolder, lang)
 
     @staticmethod
     def _pick_encoder(kind, want_encoder, source_info):
@@ -694,16 +761,172 @@ class SaveVideoConverter:
         return {"aac": 192, "libmp3lame": 192, "libopus": 128}.get(acodec, 192)
 
     @staticmethod
-    def _result(video, produced, folder):
-        """组装返回：落盘摘要 + 节点内预览。"""
-        parts = [f"{kind}（{'直出' if direct else '转码'}）" for kind, _path, direct in produced]
-        summary = f"已输出 {len(produced)} 个格式：{'、'.join(parts)}\n目录：{folder}"
+    def _result(video, produced, folder, subfolder="", lang="en"):
+        """组装返回：落盘摘要 + 节点内预览。
+
+        `subfolder` 必须与文件相对output 目录的真实位置一致，否则前端的
+        /view?subfolder=... 找不到文件，预览就会失败。
+        """
+        parts = [f"{kind} ({'copy' if direct else 'transcoded'})" for kind, _path, direct in produced]
+        summary = (
+            f"Wrote {len(produced)} format(s): {', '.join(parts)}\nFolder: {folder}"
+        )
+
+        # The full parameter report is produced here, so no separate report node
+        # is needed; it is shown in the panel and returned as a string output.
+        report = build_video_report(video, produced, lang)
+        print("[Save Video] " + report.replace("\n", "\n[Save Video] "))
 
         return {
             "ui": {
-                "text": [summary],
-                "images": [{"filename": os.path.basename(path), "type": "output",
-                            "subfolder": ""} for _kind, path, _direct in produced],
+                "text": [report] + [
+                    _preview_hint(os.path.basename(path), "output", subfolder or "")
+                    for _kind, path, _direct in produced
+                ],
             },
-            "result": (video,),
+            "result": (video, report),
         }
+
+    @staticmethod
+    def _tag_produced(video, produced):
+        """Record what was written on the VIDEO object, for VideoReportNode."""
+        try:
+            setattr(video, _PRODUCED_ATTR, list(produced))
+        except Exception:  # pragma: no cover - exotic VIDEO objects
+            pass
+        return video
+
+
+# ---------------------------------------------------------------------------
+# 节点 3：视频报告（源参数 vs 输出参数）
+# ---------------------------------------------------------------------------
+
+def _describe_video(path):
+    """读取一个视频文件的参数，用于报告。失败时返回 (None, 原因)。"""
+    try:
+        return _probe_video(path), None
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+def _video_param_lines(label, info, path, error=None, lang="en"):
+    """把一个视频的信息格式化成报告行。"""
+    lines = [f"{label}: {os.path.basename(path)}"]
+    if not info:
+        lines.append("  " + _tr("probe_failed", lang, error=error or "?"))
+        if not os.path.exists(path):
+            lines.append("  " + _tr("file_missing", lang, path=path))
+        else:
+            lines.append(f"  ({os.path.getsize(path) / (1024 * 1024):.2f} MB)")
+        return lines
+
+    container = _container_display(info.get("ext"))
+    lines.append(f"  {_tr('container', lang)}: {container}")
+    lines.append(f"  {_tr('resolution', lang)}: {info.get('width')}x{info.get('height')}")
+    lines.append(f"  {_tr('fps', lang)}: {_fmt_fps(info.get('fps'))}")
+    lines.append(
+        f"  {_tr('video_codec', lang)}: "
+        f"{_encoder_display(_to_encoder_name(info.get('video_codec')))}"
+        f"（{info.get('video_codec')}）"
+    )
+    if info.get("pix_fmt"):
+        lines.append(f"  {_tr('pixel_format', lang)}: {info['pix_fmt']}")
+    if info.get("duration"):
+        lines.append(f"  {_tr('duration', lang)}: {_fmt_duration(info['duration'])}")
+    size_mb = info.get("size", 0) / (1024 * 1024)
+    lines.append(f"  {_tr('file_size', lang)}: {size_mb:.2f}MB")
+    if info.get("has_audio"):
+        lines.append(
+            f"  {_tr('audio_track', lang)}: {info.get('audio_codec')} / "
+            f"{info.get('audio_rate')} Hz / {info.get('audio_channels')} ch"
+        )
+    else:
+        lines.append(f"  {_tr('audio_track', lang)}: {_tr('no_audio_track', lang)}")
+    if info.get("video_streams", 1) > 1:
+        lines.append(f"  {_tr('video_streams', lang, n=info['video_streams'])}")
+    return lines
+
+
+def build_video_report(video, produced, lang="en"):
+    """生成「源参数 vs 输出参数」报告文本。
+
+    供保存节点直接内联调用，输出到面板并作为一个字符串输出点，
+    因此不需要单独的报告节点中转。
+    """
+    lines = [_tr("video_report", lang), "=" * 60, ""]
+
+    source_path = _source_path_of(video)
+    if source_path and os.path.isfile(source_path):
+        info, err = _describe_video(source_path)
+        lines += _video_param_lines(_tr("source_label", lang), info, source_path, err, lang)
+    else:
+        lines.append(_tr("not_file_input", lang))
+    lines.append("")
+
+    if not produced:
+        lines.append(_tr("exported_none", lang))
+    else:
+        lines.append(_tr("exported", lang, n=len(produced)))
+        lines.append("-" * 60)
+        # produced entries are (kind, path, direct) - see the append calls in
+        # SaveVideoConverter.save(). Unpack in that same order.
+        for index, (kind, path, direct) in enumerate(produced, start=1):
+            how = _tr("direct_copy" if direct else "reencoded", lang)
+            info, err = _describe_video(path)
+            lines += _video_param_lines(
+                _tr("export_label", lang, n=index, kind=kind, how=how),
+                info, path, err, lang,
+            )
+            lines.append("")
+
+    return "\n".join(lines).rstrip()
+
+
+class VideoReportNode:
+    """Report the parameters of a video, for cases where the save node is not used."""
+
+    CATEGORY = "Video"
+    FUNCTION = "report"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("report",)
+    OUTPUT_NODE = True
+    DESCRIPTION = (
+        "Report the parameters of the source video and of every exported file.\n"
+        "Note: \"Save Video (Format Converter)\" already prints this report and exposes\n"
+        "it as a string output, so this node is only needed when you want to inspect a\n"
+        "VIDEO that did not come from the save node."
+    )
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "视频": ("VIDEO", {"tooltip": "The VIDEO input of any video output node."}),
+                "报告语言": (LANG_CHOICES, {
+                    "default": LANG_FOLLOW_UI,
+                    "tooltip": "Language of the report text. \"Follow UI language\" produces a "
+                               "Chinese report while the ComfyUI interface is Chinese, and an "
+                               "English report otherwise.",
+                }),
+            },
+        }
+
+    def report(self, 视频, 报告语言=LANG_FOLLOW_UI):
+        if 视频 is None:
+            raise ValueError("The Video input is empty (the upstream node produced no video).")
+
+        lang = _resolve_report_lang(报告语言)
+        produced = getattr(视频, _PRODUCED_ATTR, None)
+        text = build_video_report(视频, produced, lang)
+        print("[Video Report] " + text.replace("\n", "\n[Video Report] "))
+
+        preview = []
+        candidates = [p for _k, p, _d in produced] if produced else []
+        if candidates:
+            preview.append(_preview_hint(os.path.basename(candidates[0]), "output"))
+        else:
+            source_path = _source_path_of(视频)
+            if source_path and os.path.isfile(source_path):
+                preview.append(_preview_hint(os.path.basename(source_path), "input"))
+
+        return {"ui": {"text": [text] + preview}, "result": (text,)}
