@@ -252,6 +252,12 @@ Every file operation is restricted to ComfyUI's `input` and `output` directories
 Each path is normalised with `realpath` and then checked with `commonpath`, so
 absolute paths, `..` traversal and symlinks pointing outside are all rejected.
 
+A source path handed down by an upstream node is whitelisted the same way: it is
+only used when it lies inside `input`, `output` or `temp`. Paths that name another
+machine (`\\server\share\...`) are refused *before any filesystem call* — on Windows
+even a plain existence check on such a path opens an SMB session and hands that
+machine the current user's credentials.
+
 Use the canvas drop or the node's upload button to bring in your own files.
 
 ### 2. Video files work as audio input
@@ -279,6 +285,11 @@ Options marked "Auto (follow source)" adapt to the input:
 
 When the target format matches the source and all parameters are "Auto", the node
 **copies the source file** without re-encoding — essentially instant.
+
+That only happens when the recorded source file really sits inside `input`, `output`
+or `temp`. The path arrives from the upstream node (and a submitted prompt can carry
+one of its own), so if it points anywhere else the node never touches it and encodes
+from the in-memory waveform instead; the report says so.
 
 Note: the video node re-encodes when truncation, resolution, frame rate or codec
 overrides are used, since those cannot be achieved by copying.

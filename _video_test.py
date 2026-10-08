@@ -46,6 +46,9 @@ class _FP(types.ModuleType):
     def get_output_directory(self):
         return os.path.join(COMFY_ROOT, "output")
 
+    def get_temp_directory(self):
+        return os.path.join(COMFY_ROOT, "temp")
+
     def get_annotated_filepath(self, name, default_dir=None):
         return os.path.join(default_dir or INPUT_DIR, name)
 
@@ -247,6 +250,54 @@ def t_direct():
 check("同格式直转", t_direct)
 
 
+def t_direct_blocked_for_foreign_path():
+    """复评第 1 点的视频对应项：源路径越界时不得将主机文件复制进 output。"""
+    marker = b"HOST-SECRET-DO-NOT-COPY"
+    secret = os.path.join(WORK, "secret_video.bin")
+    with open(secret, "wb") as fh:
+        fh.write(marker + b"\0" * 8192)
+
+    cleanup("video/foreign")
+    fresh = load(REL)["result"][0]
+    vn._video_source_of(fresh)["path"] = secret      # 模拟被篡改的源路径
+    text = save(fresh, "video/foreign")["result"][1]
+
+    assert "(no re-encoding)" not in text and "未重新编码" not in text, text
+    out = out_file("video/foreign", "mp4")
+    assert os.path.isfile(out), text
+    with open(out, "rb") as fh:
+        assert marker not in fh.read(), "越界文件被复制进了 output"
+    probe = vn._probe_video(out)
+    assert probe["width"] == 640, probe
+    cleanup("video/foreign")
+
+
+check("越界源路径的视频改为重新编码", t_direct_blocked_for_foreign_path)
+
+
+def t_video_source_helpers_reject_foreign():
+    class Fake:
+        def __init__(self, stream):
+            self._stream = stream
+
+        def get_stream_source(self):
+            return self._stream
+
+    outside = os.path.join(WORK, "secret_video.bin")
+    assert vn._file_source_of(Fake(outside)) is None, "工作空间外的文件不可信"
+    assert vn._file_source_of(Fake("\\\\srv\\share\\a.mp4")) is None, "UNC 不可信"
+    assert vn._file_source_of(Fake("//srv/share/a.mp4")) is None, "UNC 不可信"
+    inside = os.path.join(INPUT_COPY, "src.mp4")
+    assert vn._file_source_of(Fake(inside)) == os.path.realpath(inside)
+    assert vn._source_path_of(Fake(outside)) is None
+    # 报告遇到不可信来源时只标注非文件输入，不去探测该路径
+    text = vn.build_video_report(Fake(outside), [], "en")
+    assert isinstance(text, str) and text, text
+
+
+check("视频源路径辅助函数拒绝越界与 UNC", t_video_source_helpers_reject_foreign)
+
+
 def t_multi():
     cleanup("video/multi")
     save(video, "video/multi", 导出MKV=True, 导出WEBM=True)
@@ -310,10 +361,10 @@ print("\n===== 4. 报告与报告节点 =====")
 
 
 def t_report_lang():
-    zh = load(REL, 报告语言=vn.LANG_ZH)["result"][1]
+    zh = load(REL, 报告语言=ape.LANG_ZH)["result"][1]
     assert "已加载：" in zh, zh
     assert "Loaded:" not in zh, zh
-    en = load(REL, 报告语言=vn.LANG_EN)["result"][1]
+    en = load(REL, 报告语言=ape.LANG_EN)["result"][1]
     assert "Loaded:" in en, en
     assert "已加载：" not in en, en
     # 跟随界面语言由前端上报决定
@@ -331,8 +382,8 @@ check("加载报告语言开关", t_report_lang)
 def t_save_report_lang():
     video2 = load(REL)["result"][0]
     cleanup("video/lang")
-    zh = save(video2, "video/lang", 报告语言=vn.LANG_ZH)["result"][1]
-    en = save(video2, "video/lang", 报告语言=vn.LANG_EN)["result"][1]
+    zh = save(video2, "video/lang", 报告语言=ape.LANG_ZH)["result"][1]
+    en = save(video2, "video/lang", 报告语言=ape.LANG_EN)["result"][1]
     # 报告首行是「视频报告 / Video report」标题，两种语言必须各自命中
     assert "视频报告" in zh, zh
     assert "已加载：" in zh or "源文件" in zh, zh
@@ -347,8 +398,8 @@ check("保存报告语言开关", t_save_report_lang)
 
 def t_report_node():
     node = vn.VideoReportNode()
-    zh = node.report(视频=video, 报告语言=vn.LANG_ZH)
-    en = node.report(视频=video, 报告语言=vn.LANG_EN)
+    zh = node.report(视频=video, 报告语言=ape.LANG_ZH)
+    en = node.report(视频=video, 报告语言=ape.LANG_EN)
     # OUTPUT_NODE 节点返回 {"ui": ..., "result": ...}
     zh_text = zh["result"][0]
     en_text = en["result"][0]

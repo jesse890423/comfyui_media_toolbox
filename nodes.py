@@ -50,9 +50,6 @@ _AUDIO_EXTS = ("wav", "mp3", "opus", "flac")
 # MP3 V0 为 VBR，平均码率约 245kbps，用于平台码率校验
 _MP3_V0_KBPS = 245
 
-# 试听副本目录（保存到 output 目录之外时使用）
-_PREVIEW_SUBFOLDER = "_platform_preview"
-
 # auto 模式下的候选码率
 _MP3_KBPS_CHOICES = (128, 192, 256, 320)
 _OPUS_KBPS_CHOICES = (64, 96, 128, 192, 320)
@@ -190,6 +187,7 @@ _TR = {
     "req_size":          ("单文件≤{v}MB", "file size<={v}MB"),
     "not_set":           ("未设置", "not set"),
     "source_file":       ("源文件：{name}（{fmt}）", "Source file: {name}  ({fmt})"),
+    "source_outside":    ("源文件不在 ComfyUI 目录内，改由内存音频重新编码", "the recorded source file is outside the ComfyUI directories, re-encoded from memory"),
     "adapted":           ("适配参数：{v}", "Adapted parameters: {v}"),
     "lossless_master":   ("无损母带", "lossless master"),
     "approx":            ("约 {v}kbps", "approx {v}kbps"),
@@ -736,37 +734,6 @@ def _resolve_destination(filename_prefix, output_dir, default_name="ComfyUI",
     return full_folder, name, counter, subfolder
 
 
-def _ensure_preview(ffmpeg, source_path, kind, output_dir, base):
-    """保存到 output 目录之外时，在 output/_platform_preview 生成可试听的副本。"""
-    preview_dir = os.path.join(output_dir, _PREVIEW_SUBFOLDER)
-    os.makedirs(preview_dir, exist_ok=True)
-    dest = os.path.join(preview_dir, base + ".mp3")
-
-    # 覆盖旧副本：硬链接 / 复制都不允许目标已存在
-    try:
-        if os.path.exists(dest):
-            os.unlink(dest)
-    except OSError:
-        pass
-
-    if kind == "MP3":
-        try:
-            os.link(source_path, dest)
-            return dest
-        except OSError:
-            shutil.copy2(source_path, dest)
-            return dest
-
-    result = subprocess.run(
-        [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", source_path,
-         "-map", "0:a", "-c:a", "libmp3lame", "-b:a", "128k", dest],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        return None
-    return dest
-
-
 def _unique_copy(src_path, folder, base, ext):
     """把源文件复制到目标目录（同格式直出，不重新编码）。"""
     candidate = os.path.join(folder, f"{base}.{ext}")
@@ -948,12 +915,6 @@ class LoadAudioAdvanced:
         }
 
 
-def _url_quote(text):
-    from urllib.parse import quote
-
-    return quote(os.path.abspath(text), safe="")
-
-
 def _allowed_roots():
     """返回允许读写的目录列表（已 realpath 规范化）：仅 input 与 output。"""
     roots = []
@@ -963,6 +924,72 @@ def _allowed_roots():
         except Exception:  # pragma: no cover
             continue
     return roots
+
+
+def _source_roots():
+    """上游源文件允许位于的目录：ComfyUI 自己的 input / output / temp。
+
+    这三个目录由 ComfyUI 管理（上传落在 input，保存落在 output，
+    预览与中间产物落在 temp），因此位于其中的文件是本机产生的可信媒体，
+    可以直接复制；其余路径一律不可信。
+    """
+    roots = _allowed_roots()
+    try:
+        roots.append(os.path.realpath(folder_paths.get_temp_directory()))
+    except Exception:  # pragma: no cover
+        pass
+    return roots
+
+
+def _names_remote_machine(text):
+    """字符串是否指向另一台机器（Windows UNC，形如 ``\\\\server\\share``）。
+
+    Windows 上对这类路径做任何 stat（甚至只是 realpath）都会立刻发起 SMB
+    会话，把当前登录用户的凭据交给对方机器。因此这种形状必须在任何文件
+    操作之前就被拒绝，而不能用「先试一下再判断存在性」。
+    """
+    normalized = str(text or "").strip().replace("/", "\\")
+    return normalized.startswith("\\\\")
+
+
+def _display_name(raw):
+    """报告里显示的来源名：按两种分隔符取最后一段，不作为路径使用。"""
+    text = str(raw or "").replace("\\", "/").rstrip("/")
+    return text.rsplit("/", 1)[-1] or "(memory)"
+
+
+def _within_roots(candidate, roots):
+    """candidate 是否严格位于某个 root 内部（相等本身不算「内部的文件」）。"""
+    for root in roots:
+        if candidate == root:
+            continue
+        try:
+            if os.path.commonpath([candidate, root]) == root:
+                return True
+        except ValueError:
+            # Windows 上跨盘符时 commonpath 会抛 ValueError，视为不匹配
+            continue
+    return False
+
+
+def _trusted_source_path(raw, roots=None):
+    """把上游记录的媒体源路径限制到 ComfyUI 的 input/output/temp 内。
+
+    上游 AUDIO/VIDEO 里的 ``path`` 不是本插件写的就必须当敌意输入看待：
+    ComfyUI 会把未连线的输入原样交给节点，所以提交的 prompt 里可以自带
+    任意路径。校验顺序不能换：先拒绝指向其他机器的形状（避免任何 stat
+    触发 SMB 认证），再 realpath 消解符号链接与 ``..``，最后 commonpath
+    确认仍在允许的根内；任一步不合格就返回 None，调用方回退到重新编码。
+    """
+    text = str(raw or "").strip()
+    if not text or _names_remote_machine(text):
+        return None
+
+    candidate = os.path.realpath(os.path.expanduser(os.path.expandvars(text)))
+    if not _within_roots(candidate, _source_roots() if roots is None else roots):
+        return None
+
+    return candidate if os.path.isfile(candidate) else None
 
 
 def _resolve_within_roots(raw, roots=None, label="path"):
@@ -976,27 +1003,25 @@ def _resolve_within_roots(raw, roots=None, label="path"):
     text = str(raw or "").strip()
     if not text:
         raise ValueError(f"Empty {label}.")
+    if _names_remote_machine(text):
+        raise ValueError(
+            f"{label} must be a file inside the ComfyUI directories, not a network "
+            f"share path. Got: {text}"
+        )
 
     candidate = os.path.realpath(os.path.expanduser(os.path.expandvars(text)))
 
-    for root in roots:
-        if candidate == root:
-            continue
-        try:
-            if os.path.commonpath([candidate, root]) == root:
-                return candidate
-        except ValueError:
-            # Windows 上跨盘符时 commonpath 会抛 ValueError，视为不匹配
-            continue
+    if not _within_roots(candidate, roots):
+        allowed = ", ".join(roots) if roots else "(none)"
+        raise ValueError(
+            "This node only reads and writes inside the ComfyUI input/output directories.\n"
+            f"Rejected {label}: {text}\n"
+            f"Allowed roots: {allowed}\n"
+            "Upload the file into the input directory (drag and drop in the ComfyUI window), "
+            "then pick it from the file list."
+        )
 
-    allowed = ", ".join(roots) if roots else "(none)"
-    raise ValueError(
-        "This node only reads and writes inside the ComfyUI input/output directories.\n"
-        f"Rejected {label}: {text}\n"
-        f"Allowed roots: {allowed}\n"
-        "Upload the file into the input directory (drag and drop in the ComfyUI window), "
-        "then pick it from the file list."
-    )
+    return candidate
 
 
 def list_input_media():
@@ -1192,7 +1217,11 @@ class SaveAudioPlatformExport:
             raise ValueError("Select at least one output format (WAV / MP3 / OPUS / FLAC).")
 
         # ---- 判断哪些目标可以「同格式直出」 ----
-        source_path = source_info.get("path") if source_info else None
+        # 源路径来自上游 AUDIO，可能是提交的 prompt 自带的，因此只有在它位于
+        # ComfyUI 的 input/output/temp 内时才可信任；否则回退到重新编码
+        # （波形数据本身由内存传给 ffmpeg，不经过文件系统，天然安全）。
+        raw_source_path = source_info.get("path") if source_info else None
+        source_path = _trusted_source_path(raw_source_path)
         source_format = (source_info.get("format") if source_info else None)
         auto_rate_ch = (采样率 == AUTO and 声道 == AUTO)
         auto_param = {"WAV": WAV位深 == AUTO, "MP3": MP3码率 == AUTO,
@@ -1203,7 +1232,6 @@ class SaveAudioPlatformExport:
             can = (
                 bool(source_info)
                 and source_path is not None
-                and os.path.isfile(source_path)
                 and source_format == kind.lower()
                 and auto_rate_ch
                 and auto_param[kind]
@@ -1279,10 +1307,16 @@ class SaveAudioPlatformExport:
                 adapt_parts.append(f"MP3 {mp3_kbps}kbps")
             if 导出OPUS:
                 adapt_parts.append(f"OPUS {opus_kbps}kbps")
-            lines.insert(0, _tr("source_file", lang,
-                                 name=os.path.basename(source_path), fmt=source_format))
-            lines.insert(1, _tr("adapted", lang, v=" / ".join(adapt_parts)))
-            lines.insert(2, "")
+
+            head = [_tr("source_file", lang,
+                        name=os.path.basename(source_path) if source_path
+                        else _display_name(raw_source_path),
+                        fmt=source_format)]
+            if source_path is None and raw_source_path:
+                head.append("  " + _tr("source_outside", lang))
+            head.append(_tr("adapted", lang, v=" / ".join(adapt_parts)))
+            head.append("")
+            lines = head + lines
 
         platform_ok = True
         has_platform = False

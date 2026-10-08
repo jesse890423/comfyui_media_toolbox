@@ -51,6 +51,9 @@ class _FP(types.ModuleType):
     def get_output_directory(self):
         return os.path.join(self._root, "output")
 
+    def get_temp_directory(self):
+        return os.path.join(self._root, "temp")
+
     def get_annotated_filepath(self, name, default_dir=None):
         return os.path.join(default_dir or INPUT_DIR, name)
 
@@ -300,7 +303,139 @@ expect_raises("拒绝含 .. 的文件名前缀",
 expect_raises("拒绝盘符路径前缀",
               lambda: save(load(REL)["result"][0], "D:/evil"), "relative")
 
+print("\n===== 4b. 同格式直出的源路径信任链 =====")
+
+
+def save_auto(audio, prefix, lang=ape.LANG_ZH):
+    """只导出 WAV 且参数全自动：源格式一致时应当走同格式直出。"""
+    return saver.save(**{
+        "音频": audio,
+        "文件名前缀": prefix,
+        "导出WAV": True,
+        "WAV位深": ape.AUTO,
+        "导出MP3": False,
+        "MP3码率": ape.AUTO,
+        "导出OPUS": False,
+        "OPUS码率": ape.AUTO,
+        "保留FLAC": False,
+        "采样率": ape.AUTO,
+        "声道": ape.AUTO,
+        "平台预设": ape.NO_CHECK_PRESET,
+        "平台名称": "",
+        "合格格式": "",
+        "最低采样率": 0,
+        "最低位深": 0,
+        "最低码率kbps": 0,
+        "要求声道": ape.UNLIMITED,
+        "文件大小上限MB": 200,
+        "报告语言": lang,
+    })
+
+
+def t_direct_copy_inside_input_is_kept():
+    # 上游来自 input 目录：同格式 + 全自动仍然直出（这是正常用法，不能误伤）
+    res = save_auto(load(REL)["result"][0], "__ape_smoke_out/passthru")
+    assert "[copy]" in res["result"][0], res["result"][0]
+
+
+check("input 内的源文件仍可同格式直出", t_direct_copy_inside_input_is_kept)
+
+
+def t_foreign_source_path_not_copied():
+    """复评第 1 点：提交的 prompt 自带 _audio_source.path 时不得复制主机文件。"""
+    # 用一个不可能由编码器产出的文件当探针：一旦被复制进 output 就必然现形
+    marker = b"HOST-SECRET-DO-NOT-COPY"
+    secret = os.path.join(WORK, "secret_not_audio.bin")
+    with open(secret, "wb") as fh:
+        fh.write(marker + b"\0" * 8192)
+
+    audio = load(REL)["result"][0]
+    audio[ape._SOURCE_KEY]["path"] = secret          # 模拟工作流自带的越界路径
+    report = save_auto(audio, "__ape_smoke_out/foreign")["result"][0]
+
+    assert "[copy]" not in report, report
+    assert "不在 ComfyUI 目录内" in report, report
+
+    out_dir = os.path.join(COMFY_ROOT, "output", "__ape_smoke_out")
+    produced = [os.path.join(out_dir, n) for n in os.listdir(out_dir)
+                if n.startswith("foreign_")]
+    assert produced, report
+    for path in produced:
+        with open(path, "rb") as fh:
+            data = fh.read()
+        assert marker not in data, f"越界文件被复制到了 {path}"
+        assert data[:4] == b"RIFF", f"未按内存波形重编码：{path}"
+        assert ape._read_wav_header(path), path
+
+
+check("越界源路径改为内存重编码，不被复制", t_foreign_source_path_not_copied)
+
+
+def t_unc_source_path_rejected():
+    """UNC 形状必须在任何 stat 之前就被拒绝（否则 Windows 会发起 SMB 认证）。"""
+    audio = load(REL)["result"][0]
+    for evil in ("\\\\attacker.example\\share\\secret.wav", "//attacker.example/share/s.wav"):
+        audio[ape._SOURCE_KEY]["path"] = evil
+        report = save_auto(audio, "__ape_smoke_out/unc")["result"][0]
+        assert "[copy]" not in report, report
+        assert "不在 ComfyUI 目录内" in report, report
+
+
+check("UNC 源路径不触碰文件系统也不直出", t_unc_source_path_rejected)
+
+
+def t_temp_dir_source_is_trusted():
+    """temp 也是 ComfyUI 自己的目录，位于其中的源文件允许直出。"""
+    temp_dir = os.path.join(COMFY_ROOT, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    staged = os.path.join(temp_dir, "__ape_smoke_temp.wav")
+    shutil.copyfile(wav_src, staged)
+    try:
+        assert ape._trusted_source_path(staged), "temp 内的文件应被判为可信"
+        audio = load(REL)["result"][0]
+        audio[ape._SOURCE_KEY]["path"] = staged
+        report = save_auto(audio, "__ape_smoke_out/temp")["result"][0]
+        assert "[copy]" in report, report
+    finally:
+        os.remove(staged)
+
+
+check("temp 目录内的源文件同样可信", t_temp_dir_source_is_trusted)
+
+
+def t_trusted_source_path_unit():
+    assert ape._trusted_source_path(None) is None
+    assert ape._trusted_source_path("") is None
+    assert ape._trusted_source_path(wav_src) is None, "工作空间外的文件不可信"
+    assert ape._trusted_source_path("\\\\srv\\share\\a.wav") is None
+    assert ape._trusted_source_path("//srv/share/a.wav") is None
+    assert ape._trusted_source_path(os.path.join(WORK, "not_there.wav")) is None
+    inside = os.path.join(INPUT_COPY, os.path.basename(wav_src))
+    assert ape._trusted_source_path(inside) == os.path.realpath(inside)
+    # .. 必须先展开再判定：从 input 出发绕回 input 的写法仍然有效
+    weaving = os.path.join(INPUT_DIR, "..", "input", "__ape_smoke_src", os.path.basename(wav_src))
+    assert ape._trusted_source_path(weaving) == os.path.realpath(os.path.realpath(weaving))
+    # 真正越界的 .. 写法被拒绝
+    assert ape._trusted_source_path(os.path.join(INPUT_DIR, "..", "..", "Windows", "win.ini")) is None
+    # 辅助函数形状判定
+    assert ape._names_remote_machine("\\\\a\\b") and ape._names_remote_machine("//a/b")
+    assert not ape._names_remote_machine("C:\\a\\b") and not ape._names_remote_machine("a/b")
+    assert ape._display_name("\\\\srv\\share\\x.wav") == "x.wav"
+    assert ape._display_name("") == "(memory)"
+    assert os.path.realpath(os.path.join(COMFY_ROOT, "temp")) in ape._source_roots()
+    # 越界路径在 _resolve_within_roots 里也要先拒绝形状，不做任何 stat
+    try:
+        ape._resolve_within_roots("\\\\srv\\share\\x.wav")
+    except ValueError as exc:
+        assert "network share" in str(exc), exc
+    else:
+        raise AssertionError("UNC accepted by _resolve_within_roots")
+
+
+check("_trusted_source_path 单元断言", t_trusted_source_path_unit)
+
 print("\n===== 5. 预设与中文别名向后兼容 =====")
+
 
 
 def t_preset():
@@ -367,7 +502,7 @@ def t_video_report_lang():
         "起点(秒)": 0.0,
         "终点(秒)": 0.0,
         "截取时长(秒)": 60.0,
-        "报告语言": vn.LANG_ZH,
+        "报告语言": ape.LANG_ZH,
     })
     zh = res["result"][1]
     assert "已加载：" in zh, zh
@@ -379,7 +514,7 @@ def t_video_report_lang():
         "起点(秒)": 0.0,
         "终点(秒)": 0.0,
         "截取时长(秒)": 60.0,
-        "报告语言": vn.LANG_EN,
+        "报告语言": ape.LANG_EN,
     })
     en = res2["result"][1]
     assert "Loaded:" in en, en

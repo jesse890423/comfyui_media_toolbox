@@ -24,9 +24,7 @@ import folder_paths
 
 from .nodes import (
     LANG_CHOICES,
-    LANG_EN,
     LANG_FOLLOW_UI,
-    LANG_ZH,
     TRUNCATE_CHOICES,
     TRUNCATE_NONE,
     TRUNCATE_HEAD,
@@ -37,8 +35,8 @@ from .nodes import (
     _resolve_report_lang,
     _resolve_within_roots,
     _tr,
+    _trusted_source_path,
     _unique_copy,
-    _url_quote,
     find_ffmpeg,
 )
 from .nodes import _FFMPEG_HINT
@@ -294,7 +292,12 @@ def _video_source_of(video):
 
 
 def _file_source_of(video):
-    """若 VIDEO 来自本地文件，返回文件路径（可零成本处理）；否则返回 None。"""
+    """若 VIDEO 来自 ComfyUI 目录内的本地文件，返回该路径（可零成本处理）。
+
+    路径必须通过 _trusted_source_path 校验：只有落在 input/output/temp 内
+    的才可用，否则返回 None，调用方回退到内存缓冲（ffmpeg 用 pipe:0 读，
+    不会打开任意主机文件）。
+    """
     getter = getattr(video, "get_stream_source", None)
     if not callable(getter):
         return None
@@ -302,8 +305,8 @@ def _file_source_of(video):
         source = getter()
     except Exception:
         return None
-    if isinstance(source, str) and os.path.isfile(source):
-        return source
+    if isinstance(source, str):
+        return _trusted_source_path(source)
     return None
 
 
@@ -311,8 +314,9 @@ def _source_path_of(video):
     """报告用的源文件路径：优先取节点自己记录的，回退到 VIDEO 自身的流来源。"""
     info = _video_source_of(video)
     recorded = info.get("path") if isinstance(info, dict) else None
-    if recorded and os.path.isfile(recorded):
-        return recorded
+    resolved = _trusted_source_path(recorded)
+    if resolved:
+        return resolved
     return _file_source_of(video)
 
 
@@ -622,7 +626,7 @@ class SaveVideoConverter:
         want_fps = None if 帧率 == KEEP_SOURCE else _choice_int(帧率, 0) or None
 
         source_info = _video_source_of(视频)
-        source_path = source_info.get("path") if source_info else None
+        source_path = _trusted_source_path(source_info.get("path")) if source_info else None
         source_container = _container_display(source_info.get("ext")) if source_info else None
 
         folder, name, counter, subfolder = _resolve_destination(
@@ -637,7 +641,7 @@ class SaveVideoConverter:
                      and not source_info.get("start_time"))
         can_direct = bool(
             untouched
-            and source_path and os.path.isfile(source_path)
+            and source_path
             and source_container in targets
             and want_encoder == AUTO
             and want_crf is None
@@ -775,6 +779,7 @@ class SaveVideoConverter:
         # The full parameter report is produced here, so no separate report node
         # is needed; it is shown in the panel and returned as a string output.
         report = build_video_report(video, produced, lang)
+        print("[Save Video] " + summary)
         print("[Save Video] " + report.replace("\n", "\n[Save Video] "))
 
         return {
